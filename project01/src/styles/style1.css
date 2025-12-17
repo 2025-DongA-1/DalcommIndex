@@ -1,0 +1,947 @@
+/* public/style.css */
+
+/* 공통 기본 설정 */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f5f5;
+  color: #222;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ====== 상단 보조바 + 메인 상단바 (index.html 기준) ====== */
+/* top-info-bar 는 index에서 사용 :contentReference[oaicite:1]{index=1} */
+.top-info-bar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  font-size: 11px;
+  background: #faf4ff;
+  color: #7a5ad8;
+  border-bottom: 1px solid #f0e8ff;
+  gap: 16px;
+}
+
+.top-info-bar a {
+  color: #7a5ad8;
+}
+
+/* 공통 상단바 (index / map / chatbot / login / join 에서 공용) */
+header.topbar,
+.topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e5e5;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.logo {
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.logo-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #ff9a9e, #fecfef 40%, #fad0c4 70%, #fbc2eb);
+}
+
+.logo-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: #999;
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.top-nav a {
+  color: #555;
+}
+
+.top-actions button,
+.topbar-button {
+  margin-left: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #ff7aa2;
+  background: #ffffff;
+  color: #ff4b82;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.top-actions button.primary,
+.topbar-button.primary {
+  background: #ff4b82;
+  color: #fff;
+}
+
+.top-actions button:hover,
+.topbar-button:hover {
+  opacity: 0.9;
+}
+
+/* ====== index 메인 레이아웃 / 블록 공통 ====== */
+.hero {
+  position: relative;
+  height: 340px;
+  background-image: url("https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=80");
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.4),
+    rgba(0,0,0,0.55)
+  );
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  height: 100%;
+  padding: 32px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  color: #fff;
+}
+
+.hero-title {
+  font-size: 26px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.hero-subtitle {
+  font-size: 13px;
+  color: rgba(255,255,255,0.9);
+  margin-bottom: 16px;
+}
+
+/* 검색 패널 (index 검색 박스) */
+.search-panel {
+  background: rgba(255,255,255,0.98);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  flex-wrap: wrap;
+}
+
+.search-field {
+  flex: 2;
+  min-width: 160px;
+  position: relative;
+}
+
+.search-field label {
+  font-size: 10px;
+  color: #888;
+  margin-bottom: 2px;
+  display: block;
+}
+
+.search-field input,
+.search-field select {
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 13px;
+}
+
+.search-field input:focus,
+.search-field select:focus {
+  outline: none;
+  border-color: #ff7aa2;
+  box-shadow: 0 0 0 2px rgba(255,122,162,0.18);
+}
+
+.search-button {
+  flex-shrink: 0;
+  width: 88px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: #ff4b82;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.search-button:hover {
+  opacity: 0.9;
+}
+
+/* 메인 컨테이너 / 블록 (index 기준) :contentReference[oaicite:2]{index=2} */
+.page-main {
+  max-width: 1080px;
+  margin: 24px auto 40px;
+  padding: 0 24px 40px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 2.1fr 2fr;
+  gap: 28px;
+  align-items: flex-start;
+}
+
+@media (max-width: 960px) {
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+  .hero {
+    height: 280px;
+  }
+}
+
+section.block {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px 18px 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+
+.block-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 왼쪽: 지역으로 찾기 카드들 */
+.region-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.region-card {
+  position: relative;
+  border-radius: 8px;
+  height: 80px;
+  overflow: hidden;
+  cursor: pointer;
+  background-size: cover;
+  background-position: center;
+}
+
+/* 사진 위 어둡게 그라데이션 */
+.region-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.55),
+    rgba(0, 0, 0, 0.05)
+  );
+}
+
+/* 카드 안 텍스트 */
+.region-card-inner {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.region-card-name {
+  font-weight: 600;
+}
+
+.region-card-count {
+  opacity: 0.9;
+}
+
+/* 지역별 텍스트 링크 영역 */
+.region-links-title {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.region-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.region-links a {
+  color: #555;
+}
+
+/* 오른쪽: 종류·테마로 찾기 카드들 */
+.category-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.category-tile {
+  position: relative;
+  height: 90px;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background-size: cover;
+  background-position: center;
+}
+
+.category-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.55),
+    rgba(0, 0, 0, 0.05)
+  );
+}
+
+.category-inner {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+}
+
+.category-name {
+  font-weight: 600;
+}
+
+.category-count {
+  opacity: 0.9;
+}
+
+/* 아래 키워드 태그들 */
+.keyword-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f5f5f5;
+  font-size: 11px;
+  color: #555;
+}
+
+/* 반응형 – 화면 줄어들면 카드 열 수 줄이기 */
+@media (max-width: 960px) {
+  .region-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .category-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .region-cards,
+  .category-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.block-title small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #999;
+}
+
+/* ====== 공통 카드(로그인/회원가입) – login.html/join.html 기반 :contentReference[oaicite:3]{index=3} :contentReference[oaicite:4]{index=4} */
+main.auth-main {
+  min-height: calc(100vh - 56px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  padding: 24px 24px 20px;
+}
+
+.card-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 18px;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #ddd;
+  font-size: 13px;
+}
+
+/* 체크박스는 공통 input 스타일 덮어쓰기 */
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+}
+
+input:focus {
+  outline: none;
+  border-color: #2f80ed;
+  box-shadow: 0 0 0 2px rgba(47,128,237,0.15);
+}
+
+.helper {
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 0;
+  border-radius: 999px;
+  border: none;
+  background: #2f80ed;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-submit-btn:hover {
+  opacity: 0.95;
+}
+
+.bottom-text {
+  margin-top: 10px;
+  font-size: 12px;
+  text-align: center;
+  color: #666;
+}
+
+.bottom-text a {
+  color: #2f80ed;
+}
+
+/* ====== 챗봇 페이지 전용 (chatbot.html 기준) :contentReference[oaicite:5]{index=5} */
+.chat-container {
+  max-width: 900px;
+  margin: 24px auto;
+  padding: 0 16px 40px;
+}
+
+.chat-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.chat-desc {
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#queryInput {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+  outline: none;
+}
+
+#queryInput:focus {
+  border-color: #2f80ed;
+  box-shadow: 0 0 0 1px rgba(47, 128, 237, 0.2);
+}
+
+#sendBtn {
+  border: none;
+  background: #2f80ed;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 16px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#sendBtn:disabled {
+  background: #b3c7f0;
+  cursor: default;
+}
+
+.status {
+  font-size: 12px;
+  color: #777;
+  margin-bottom: 4px;
+}
+
+.chat-box {
+  margin-top: 8px;
+  margin-bottom: 16px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  font-size: 14px;
+}
+
+.chat-msg {
+  display: flex;
+  margin-bottom: 8px;
+}
+
+.chat-msg.user {
+  justify-content: flex-end;
+}
+
+.chat-msg.bot {
+  justify-content: flex-start;
+}
+
+.chat-bubble {
+  max-width: 80%;
+  padding: 8px 12px;
+  border-radius: 16px;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.chat-msg.user .chat-bubble {
+  background: #2f80ed;
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.chat-msg.bot .chat-bubble {
+  background: #eee;
+  color: #222;
+  border-bottom-left-radius: 4px;
+}
+
+.results {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-card,
+.card.cafe-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid #eee;
+}
+
+/* ====== 지도 페이지 전용 (map.html 기준) ====== */
+.layout {
+  width: 100%;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 56px 1fr;
+  grid-template-areas:
+    "header header"
+    "sidebar main";
+}
+
+/* 각 영역이 어느 칸에 들어갈지 지정 */
+.layout > .topbar {
+  grid-area: header;
+}
+
+.layout > .sidebar {
+  grid-area: sidebar;
+}
+
+.layout > .main {
+  grid-area: main;
+}
+
+/* .layout.sidebar-collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.layout.sidebar-collapsed aside.sidebar {
+  padding: 0;
+  border-right: none;
+  width: 0;
+  overflow: hidden;
+} */
+
+aside.sidebar,
+main.main {
+  transition: all 0.25s ease;
+}
+
+.sidebar-toggle {
+  margin-left: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+  background: #f7f7f7;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+aside.sidebar {
+  background: #ffffff;
+  border-right: 1px solid #e5e5e5;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.sidebar h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.filter-group {
+  margin-bottom: 16px;
+}
+
+.filter-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;            /* 각 줄 간격 */
+}
+
+.filter-options label {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  cursor: pointer;
+  gap: 6px;            /* 체크박스와 글자 사이 간격 */
+  white-space: nowrap; /* 단어(카페 이름 등) 중간에서 줄바꿈 금지 */
+  word-break: keep-all;/* 한 글자씩 부러지는 것 방지 */
+}
+
+.filter-options input {
+  flex-shrink: 0;      /* 체크박스 크기 그대로 유지 */
+  margin: 0;           /* 오른쪽 여백은 gap으로 통일 */
+}
+
+.filter-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.filter-actions button {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filter-actions .search-btn {
+  background: #2f80ed;
+  color: #fff;
+}
+
+.filter-actions .reset-btn {
+  background: #eeeeee;
+}
+
+main.main {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#map {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.result-list {
+  margin-top: 8px;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.result-card {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 8px 2px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.result-card:last-child {
+  border-bottom: none;
+}
+
+.result-name {
+  font-weight: 600;
+}
+
+.result-meta {
+  color: #666;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.result-score {
+  color: #2f80ed;
+  font-weight: 600;
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.result-addr {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ====== 메인 하단 랭킹 섹션 ====== */
+
+.rank-section {
+  margin-top: 32px;
+}
+
+.rank-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #333;
+}
+
+.rank-section-sub {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 14px;
+}
+
+.rank-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+@media (max-width: 960px) {
+  .rank-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rank-block {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px 18px 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+
+.rank-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.rank-block-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.rank-block-caption {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.rank-tag {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #ffeff5;
+  color: #ff4b82;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.rank-tag-secondary {
+  background: #eef3ff;
+  color: #2f80ed;
+}
+
+/* 리스트 기본 스타일 리셋 */
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rank-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f3f3f3;
+}
+
+.rank-item:last-child {
+  border-bottom: none;
+}
+
+.rank-num {
+  width: 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff4b82;
+}
+
+.rank-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rank-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rank-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.rank-more-btn {
+  margin-top: 10px;
+  width: 100%;
+  padding: 8px 0;
+  border-radius: 999px;
+  border: 1px solid #eee;
+  background: #fafafa;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rank-more-btn:hover {
+  background: #f2f2f2;
+}
+
+/* ====== 공통 푸터 (index에서 사용) ====== */
+footer {
+  border-top: 1px solid #e5e5e5;
+  padding: 16px 24px 20px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+}
