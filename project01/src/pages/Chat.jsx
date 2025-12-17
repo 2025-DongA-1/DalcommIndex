@@ -18,10 +18,9 @@ const [messages, setMessages] = useState([]);
 
 const handleSend = () => {
   const text = input.trim();
-  if (!text) return;
+  if (!text)return;
 
-  setMessages((prev) => [...prev, { sender: "user", text }]);
-
+  setMessages((prev) => [...prev, { sender: "user", text, time: formatNow() }]);
   setInput("");
   setTimeout(() => inputRef.current?.focus(), 0);
 };
@@ -32,6 +31,23 @@ useEffect(() => {
   if (!scrollRef.current) return;
   scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
 }, [messages]);
+
+const formatNow = () => {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `오늘 · ${hh}:${mm}`;
+};
+const [helloTime] = useState(formatNow());
+
+const formatToday = () => {
+  const d = new Date();
+  const week = ["일","월","화","수","목","금","토"][d.getDay()];
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}.${mm}.${dd} (${week})`;
+};
 
   return (
     <>
@@ -50,7 +66,7 @@ useEffect(() => {
 .chat-page {
   min-height: 100vh;
   font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: radial-gradient(circle at top left, #ffe7f0 0, #f5f7ff 38%, #eef9ff 80%);
+  background: white
   color: #111827;
   display: flex;
   justify-content: center;
@@ -103,7 +119,7 @@ useEffect(() => {
 }
 
 .brand-text-main {
-  font-size: 18px;
+  font-size: 28px;
   font-weight: 700;
 }
 
@@ -122,7 +138,7 @@ useEffect(() => {
   border-radius: 999px;
   border: 1px solid transparent;
   padding: 8px 13px;
-  font-size: 13px;
+  font-size: 16px;
   cursor: pointer;
   background: transparent;
   white-space: nowrap;
@@ -290,7 +306,7 @@ useEffect(() => {
   max-width: 80%;
   padding: 8px 11px;
   border-radius: 16px;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -386,7 +402,7 @@ useEffect(() => {
 .side-panel {
   padding: 14px 14px 12px;
   border-radius: 20px;
-  background: #ffffff;
+  background: #f8f4f0ff;
   border: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
@@ -394,7 +410,7 @@ useEffect(() => {
 }
 
 .side-title {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #4b5563;
   margin-bottom: 4px;
@@ -402,7 +418,7 @@ useEffect(() => {
 
 .example-list {
   list-style: none;
-  font-size: 12px;
+  font-size: 13px;
   color: #6b7280;
   line-height: 1.6;
   background: #f9fafb;
@@ -500,7 +516,40 @@ useEffect(() => {
 
 }
 
+.date-divider{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 12px;
+}
 
+.date-divider::before,
+.date-divider::after{
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e5e7eb;
+}
+
+.date-divider span{
+  font-size: 12px;
+  color: #9ca3af;
+  background: #fff;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+}
+
+.example-list li{
+  cursor: pointer;
+  font-weight: 400;
+  transition: font-weight 0.15s ease, color 0.15s ease;
+}
+
+.example-list li:hover{
+  font-weight: 700;   /* ✅ 글씨 진하게 */
+  color: #111827;     /* ✅ 더 진한 색 */
+}
 
         `}
       </style>
@@ -513,14 +562,14 @@ useEffect(() => {
         <div className="app-shell">
           {/* 상단바 */}
           <header className="top-bar">
-            <div className="brand">
+            <div className="brand" onClick={()=>navigate("/")}>
               <img className = "logo-mark" src="/로고.png" alt="로고" />
               <div>
                 <div className="brand-text-main">달콤인덱스 챗봇</div>
                 <p>문장 한 줄로 원하는 디저트 카페 찾기</p>
   
               
-                   챗봇이 이전 대화까지 기억하고 맞춤 카페를 골라드려요.
+                  
               
                 <div className="brand-text-sub"></div>
               </div>
@@ -531,7 +580,7 @@ useEffect(() => {
                 className = "pill-btn ghost"
                 type = "button"
                 onClick = {()=>navigate("/")}>
-                  Main
+                  Main으로 돌아가기
                   </button>
 
             </div>
@@ -551,7 +600,7 @@ useEffect(() => {
                 <div className="bot-info">
                   <div className="bot-avatar">☕</div>
                   <div>
-                    <div className="bot-text-main">DessertBot</div>
+                    <div className="bot-text-main">디-도-리</div>
                   </div>
                 </div>
                 <div className="status-wrap">
@@ -562,6 +611,10 @@ useEffect(() => {
 
               <div className="chat-body">
                 <div className="chat-scroll" ref={scrollRef}>
+                  <div className="date-divider">
+                  <span>{formatToday()}</span>
+                  </div>
+
 
                   <div className="bubble-row bot">
                     <div className="bubble bot">
@@ -570,38 +623,33 @@ useEffect(() => {
                      딱 맞는 디저트카페를 추천해드릴게요.
                     </div>
                   </div>
+                  
+                  
+                 {messages
+                   .filter((m) => (m.text ?? "").trim().length > 0)
+                   .map((m, idx) => {
+                  const next = messages[idx + 1];
+                  const showTime = !next || next.time !== m.time;
 
-                  {messages.map((m, idx) => (
-                    <div key={idx} className={`bubble-row ${m.sender}`}>
-                     <div className={`bubble ${m.sender}`}>{m.text}</div>
-                    </div>
-                    ))}
+                    return (
+                   <React.Fragment key={idx}>
+                   <div className={`bubble-row ${m.sender}`}>
+                    <div className={`bubble ${m.sender}`}>{m.text}</div>
+                   </div>
+                   {showTime && <div className={`time ${m.sender}`}>{m.time}</div>}
+                    </React.Fragment>
+    );
+  })}
+
+                  
+
+                  
                   
 
 
-                  
-
-                  <div className="time">오늘 · 17:20</div>
-
-                  <div className="bubble-row user">
-                    <div className="bubble user">
-                    
-                    </div>
-                  </div>
-                  <div className="time user">오늘 · 17:21</div>
-
-                  <div className="bubble-row bot">
-                    <div className="bubble bot">
-                     
-                      <br />
-                      <span style={{ opacity: 0.8 }}>
-                       
-                      </span>
-                    </div>
-
                     
 
-                  </div>
+               
                 </div>
                   <p className="hint-text">
                      지역 · 분위기 · 방문 목적 · 맛을 조합해서 자연스럽게 말해보세요.
@@ -637,14 +685,7 @@ useEffect(() => {
 
             {/* 오른쪽: 예시 & 태그 */}
             <aside className="side-panel">
-              <div>
-                <div className="side-title">예시 문장</div>
-                <ul className="example-list">
-                  <li>· 광주에서 사진 찍기 좋은 감성 카페 추천해줘</li>
-                  <li>· 담양에서 가족이랑 가기 좋은 디저트카페 있어?</li>
-                  <li>· 화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘</li>
-                </ul>
-              </div>
+              
 
               <div>
                 <div className="side-title" style={{ marginTop: 6 }}>
@@ -663,8 +704,19 @@ useEffect(() => {
                   <span className="tag-chip">케이크</span>
                   <span className="tag-chip">커피</span>
                 </div>
-              </div>
+                <br />
+                
 
+                <div>
+                <div className="side-title">예시 문장</div>
+                <ul className="example-list">
+                  <li  onClick={() => onChipClick("광주에서 사진 찍기 좋은 감성 카페 추천해줘")} >· 광주에서 사진 찍기 좋은 감성 카페 추천해줘</li>
+                  <li  onClick={() => onChipClick("담양에서 가족이랑 가기 좋은 디저트카페 있어?")}>· 담양에서 가족이랑 가기 좋은 디저트카페 있어?</li>
+                  <li  onClick={() => onChipClick("화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘")}>· 화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘</li>
+                </ul>
+              </div>
+              </div>
+              
               <p className="side-note">
                 원하는 조합으로 편하게 말만 해주세요.
                 <br />
