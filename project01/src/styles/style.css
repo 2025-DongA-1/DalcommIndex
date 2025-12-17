@@ -1035,4 +1035,70 @@ footer {
   padding: 100px; /* ✅ 좌우 여백 */
 }
 
+/* ✅ 마이페이지 전체 스케일업 (내용까지) */
+.chat-container.mypage-container{
+  max-width: 1200px;     /* 카드 폭이 커지려면 컨테이너도 함께 */
+  font-size: 16px;       /* 기본 글자 크기 업 */
+  line-height: 1.6;      /* 줄 간격 */
+}
+
+/* ✅ 마이페이지 본문 카드 크게 */
+.card.mypage-card{
+  max-width: 1200px;
+  padding: 34px;         /* 카드 안 여백(체감 크기 크게) */
+}
+
+/* ✅ 마이페이지 카드 내부 제목/설명 */
+.card.mypage-card .card-title{
+  font-size: 22px;
+}
+.card.mypage-card .card-subtitle{
+  font-size: 16px;
+}
+
+/* ✅ 인풋/셀렉트/텍스트영역 크게 */
+.chat-container.mypage-container input,
+.chat-container.mypage-container select,
+.chat-container.mypage-container textarea{
+  font-size: 16px;
+  padding: 12px 12px;
+  min-height: 44px;
+}
+
+/* ✅ 라벨/헬퍼 문구 */
+.chat-container.mypage-container .form-group label{
+  font-size: 14px;
+}
+.chat-container.mypage-container .helper{
+  font-size: 13px;
+}
+
+/* ✅ 버튼 크게(마이페이지 내 버튼들) */
+.chat-container.mypage-container button,
+.chat-container.mypage-container .auth-submit-btn{
+  font-size: 15px;
+  padding: 12px 16px;
+}
+
+/* ✅ 즐겨찾기 태그(chip)도 살짝 키우기 */
+.chat-container.mypage-container .chip{
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+/* ===== 마이페이지: 즐겨찾기 탭 전용 카드 ===== */
+.mypage-fav-list{
+  display: grid;
+  gap: 12px; /* 카드 사이 간격 */
+}
+
+.mypage-fav-card{
+  border: 1px solid #eee;
+  border-radius: 14px;
+  background: #fff;
+
+  /* ✅ 여기 값들만 조절하면 "카드 틀(사이즈)"이 커집니다 */
+  padding: 30px 40px;   /* 카드 내부 여백(커 보이는 핵심) */
+  min-height: 130px;    /* 카드 높이 */
+}
 

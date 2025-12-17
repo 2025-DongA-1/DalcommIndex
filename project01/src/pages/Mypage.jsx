@@ -223,7 +223,7 @@ export default function Mypage() {
   return (
      <div className="app-container">
       <Header />
-    <div className="chat-container">
+    <div className="chat-container mypage-container">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24 }}>마이페이지</h1>
@@ -259,7 +259,7 @@ export default function Mypage() {
       )}
 
       {/* 본문 카드 */}
-      <div className="card" style={{ maxWidth: 900, marginTop: 14 }}>
+      <div className="card mypage-card" style={{ marginTop: 14 }}>
         {/* 회원정보 수정 */}
         {tab === "profile" && (
           <>
@@ -350,9 +350,9 @@ export default function Mypage() {
             {favorites.length === 0 ? (
               <div style={{ color: "#777", fontSize: 13 }}>즐겨찾기한 카페가 없습니다.</div>
             ) : (
-              <div style={{ display: "grid", gap: 10 }}>
+              <div className="mypage-fav-list">
                 {favorites.map((cafe) => (
-                  <div key={cafe.id} style={itemCard}>
+                  <div key={cafe.id} className="mypage-fav-card">
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                       <div>
                         <div style={{ fontWeight: 700 }}>{cafe.name}</div>
