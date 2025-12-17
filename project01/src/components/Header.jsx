@@ -21,7 +21,7 @@ const Header = ({showInfoBar = false}) => {
       <header className="topbar">
         {/* 로고 클릭 시 홈으로 */}
         <div className="logo" onClick={() => navigate("/")}>
-          <div className="logo-mark"></div>
+        <img className = "logo-mark" src="/로고.png" alt="로고" />
           <div>
             달콤 인덱스
             <div className="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>

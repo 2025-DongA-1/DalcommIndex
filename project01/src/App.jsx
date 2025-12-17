@@ -1,4 +1,6 @@
 import { Routes, Route } from "react-router-dom";
+import Layout from "./components/Layout"
+
 import Main from "./pages/Main";
 import MapPage from "./pages/Map";
 import Chatbot from "./pages/Chat";

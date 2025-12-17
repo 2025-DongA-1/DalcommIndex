@@ -1,0 +1,420 @@
+/* public/style.css - 통합 버전 */
+
+/* ====== 1. 공통 기본 설정 ====== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f5f5f5;
+  color: #222;
+  line-height: 1.5;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ====== 2. 상단바 및 공통 헤더 ====== */
+.top-info-bar {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 24px;
+  font-size: 11px;
+  background: #faf4ff;
+  color: #7a5ad8;
+  border-bottom: 1px solid #f0e8ff;
+  gap: 16px;
+}
+
+header.topbar,
+.topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e5e5e5;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.logo-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #ff9a9e, #fecfef 40%, #fad0c4 70%, #fbc2eb);
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.top-actions button,
+.topbar-button {
+  margin-left: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #ff7aa2;
+  background: #ffffff;
+  color: #ff4b82;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.top-actions button.primary,
+.topbar-button.primary {
+  background: #ff4b82;
+  color: #fff;
+}
+
+/* ====== 3. 메인/인덱스 페이지 레이아웃 ====== */
+.hero {
+  position: relative;
+  height: 340px;
+  background-image: url("https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1600&q=80");
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+  height: 100%;
+  padding: 32px 24px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  color: #fff;
+}
+
+.page-main {
+  max-width: 1080px;
+  margin: 24px auto 40px;
+  padding: 0 24px 40px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: 2.1fr 2fr;
+  gap: 28px;
+}
+
+/* ====== 4. 지도 서비스 전용 레이아웃 (style1.css 통합) ====== */
+.app-container {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content-area {
+  flex: 1 1 0%;
+  align-self: stretch;
+  display: flex;
+  overflow: hidden;
+}
+
+.map-and-results-wrap {
+  flex: 1 1 0%;
+  align-self: stretch;
+  position: relative;
+  background: #E9EEF5;
+  display: flex;
+  flex-direction: column; 
+}
+
+/* 사이드바 스타일 업데이트 */
+.sidebar {
+  width: 300px; 
+  min-width: 300px;
+  align-self: stretch;
+  position: relative;
+  background: white;
+  box-shadow: 4px 0px 12px rgba(0, 0, 0, 0.05);
+  border-right: 1px solid #F0E1DB;
+  overflow-y: auto;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+  z-index: 50;
+}
+
+.sidebar-content-wrap {
+  padding: 16px 16px 90px 16px; 
+}
+
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+}
+
+/* 필터 디자인 요소 */
+.filter-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-title-group .icon {
+  font-size: 18px;
+  font-weight: 350;
+  padding: 2px 0;
+}
+
+.filter-title-group .text {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* 초기화 버튼 */
+.filter-reset-btn {
+  color: #999999;
+  font-size: 12px;
+  padding: 2px 6px 3px 6px;
+  cursor: pointer;
+}
+
+/* 닫기 버튼 그룹 */
+.filter-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* [추가] 필터 닫기 버튼 스타일 */
+.close-filter-btn {
+    padding: 2px 8px 3px 8px;
+    border-radius: 999px;
+    border: 1px solid #FF9F68; /* 오렌지색 테두리 */
+    background: white;
+    color: #FF9F68; /* 오렌지색 텍스트 */
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.close-filter-btn:hover {
+    background: #FFF7F2;
+}
+
+
+.filter-chip-inner {
+  padding: 9px 12px 8px 12px;
+  background: white;
+  border-radius: 999px;
+  outline: 1px solid #F0D3C8;
+  outline-offset: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-chip-text {
+  color: #555555;
+  font-size: 12px;
+  font-weight: 350;
+}
+.filter-group {
+  padding-top: 14px;
+  border-top: 1px solid #F3E4DC;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.filter-group-title .text {
+  color: #333333;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 0 2px 0;
+}
+.filter-options-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.active-filters-area {
+  min-height: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+}
+.no-filter-message {
+  color: #AAAAAA;
+  font-size: 11px;
+  font-weight: 350;
+  padding: 3px 0 18px 0;
+}
+
+
+.sidebar-search-btn {
+  width: calc(90% - 32px); 
+  /* [수정] padding을 줄여 높이 축소 */
+  padding: 6px 18px 7px 18px; 
+  position: absolute;
+  bottom: 16px; 
+  left: 16px;
+  background: #FF9F68; 
+  box-shadow: 0px 4px 12px rgba(255, 159, 104, 0.55);
+  border-radius: 999px;
+  outline: 1px solid transparent; 
+  outline-offset: -1px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+
+.sidebar-search-btn .icon {
+  color: white; 
+  font-weight: 700;
+  font-size: 13px;
+  margin-right: 4px; 
+}
+
+.sidebar-search-btn .text {
+  color: white; 
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.26px;
+}
+
+/* ====== 5. 지도 내 검색창 및 오버레이 ====== */
+.map-search-bar {
+  width: 338px;
+  padding: 6px 10px;
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%); /* 중앙 정렬 */
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+}
+
+.map-search-input-wrap {
+  flex-grow: 1;
+}
+
+.map-search-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: #333;
+  padding: 1px 2px 2px 2px;
+  background: transparent;
+}
+.map-search-input::placeholder {
+  color: #757575;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.map-search-action-btn {
+  padding: 7px 14px 8px 14px;
+  background: #FF9F68;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.map-search-action-btn .text {
+  color: white;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.sidebar-open-btn {
+  position: absolute;
+  top: 14px; /* 지도 검색바와 높이 맞춤 */
+  left: 16px; /* 왼쪽에서 띄움 */
+  padding: 8px 16px 9px 16px; /* 버튼 크기 조정 */
+  background: white;
+  border: none;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 20; /* 지도 검색바보다 위에 위치 */
+  white-space: nowrap;
+}
+
+.sidebar-open-btn:hover {
+  background: #f8f8f8;
+}
+
+/* ====== 6. 폼 및 인증 페이지 (로그인/회원가입) ====== */
+.card {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+  padding: 24px;
+}
+
+.auth-submit-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 999px;
+  border: none;
+  background: #2f80ed;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ====== 7. 반응형 디자인 ====== */
+@media (max-width: 960px) {
+  .page-grid { grid-template-columns: 1fr; }
+  .hero { height: 280px; }
+  .sidebar { width: 260px; min-width: 260px; }
+}
+
+@media (max-width: 640px) {
+  .sidebar {
+    position: fixed;
+    height: 100%;
+    left: -300px; /* 사이드바 숨김 처리 필요 시 */
+  }
+}
+
+/* ====== 8. 기타 요소 및 푸터 ====== */
+footer {
+  border-top: 1px solid #e5e5e5;
+  padding: 20px;
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+}
