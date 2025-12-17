@@ -1,8 +1,38 @@
-import React from "react"
+import React, {useRef, useState, useEffect} from "react"
 import {useNavigate} from "react-router-dom"
+
+
 
 const Chat = () => {
   const navigate = useNavigate()
+
+  const [input, setInput] = useState("");
+const inputRef = useRef(null);
+
+const onChipClick = (text) => {
+  setInput(text);
+  setTimeout(() => inputRef.current?.focus(), 0);
+};
+
+const [messages, setMessages] = useState([]);
+
+const handleSend = () => {
+  const text = input.trim();
+  if (!text) return;
+
+  setMessages((prev) => [...prev, { sender: "user", text }]);
+
+  setInput("");
+  setTimeout(() => inputRef.current?.focus(), 0);
+};
+
+const scrollRef = useRef(null);
+
+useEffect(() => {
+  if (!scrollRef.current) return;
+  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+}, [messages]);
+
   return (
     <>
       <style>
@@ -241,16 +271,19 @@ const Chat = () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-items: stretch; 
 }
 
 .bubble-row {
   display: flex;
   align-items: flex-end;
   gap: 6px;
+  width: 100%;  
 }
 
 .bubble-row.user {
   justify-content: flex-end;
+  width: 100%;
 }
 
 .bubble {
@@ -432,6 +465,43 @@ const Chat = () => {
     display: none;
   }
 }
+
+.quick-chips{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 6px 2px;
+}
+
+.quick-chip{
+  border: 1px solid #e5e7eb;
+  background: #f3f4ff;
+  color: #374151;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.quick-chip:hover{
+  filter: brightness(0.98);
+}
+
+
+/* ✅ '지역 · 분위기 …' 문장을 칩에 더 가깝게 */
+.hint-text{
+  margin-top: 18px;   /* 문장을 아래로 내림 (값 늘릴수록 더 내려감) */
+  margin-bottom: -10px; /* 문장과 칩 사이 간격(작게) */
+  font-size: 13px;      /* 입력칸 텍스트 느낌 */
+  color: #6b7280;       /* 입력칸 placeholder 같은 회색 */
+  font-weight: 400;
+  line-height: 1.4;
+  color:#9ca3af; 
+
+}
+
+
+
         `}
       </style>
 
@@ -448,11 +518,10 @@ const Chat = () => {
               <div>
                 <div className="brand-text-main">달콤인덱스 챗봇</div>
                 <p>문장 한 줄로 원하는 디저트 카페 찾기</p>
-                <p>
-                  지역 · 분위기 · 방문 목적 · 맛을 조합해서 자연스럽게 말해보세요.
-                  <br />
+  
+              
                    챗봇이 이전 대화까지 기억하고 맞춤 카페를 골라드려요.
-                </p>
+              
                 <div className="brand-text-sub"></div>
               </div>
             </div>
@@ -472,15 +541,7 @@ const Chat = () => {
 
           </header>
 
-          {/* 상단 설명 */}
-          <section className="hero">
-            <div className="hero-chips">
-              <div className="hero-chip">☕ 커피 맛 좋은 곳</div>
-              <div className="hero-chip">📚 공부하기 좋은 조용한 카페</div>
-              <div className="hero-chip">📸 사진 찍기 좋은 감성 카페</div>
-              <div className="hero-chip">👫 데이트 & 수다</div>
-            </div>
-          </section>
+        
 
           {/* 메인 레이아웃 (챗봇 + 예시/태그) */}
           <section className="chat-layout">
@@ -500,52 +561,76 @@ const Chat = () => {
               </div>
 
               <div className="chat-body">
-                <div className="chat-scroll">
+                <div className="chat-scroll" ref={scrollRef}>
+
                   <div className="bubble-row bot">
                     <div className="bubble bot">
                       안녕하세요! 😊<br />
                       원하는 <b>지역</b>과 <b>분위기</b>, <b>목적</b>을 알려주시면
-                      <br />
-                      딱 맞는 디저트카페를 추천해드릴게요.
+                     딱 맞는 디저트카페를 추천해드릴게요.
                     </div>
                   </div>
+
+                  {messages.map((m, idx) => (
+                    <div key={idx} className={`bubble-row ${m.sender}`}>
+                     <div className={`bubble ${m.sender}`}>{m.text}</div>
+                    </div>
+                    ))}
+                  
+
+
+                  
+
                   <div className="time">오늘 · 17:20</div>
 
                   <div className="bubble-row user">
                     <div className="bubble user">
-                      나주에서 조용하게 공부하기 좋은 카페 추천해줘
+                    
                     </div>
                   </div>
                   <div className="time user">오늘 · 17:21</div>
 
                   <div className="bubble-row bot">
                     <div className="bubble bot">
-                      좋아요! 나주에서 <b>조용하고 공부하기 좋은</b> 카페를 찾고 있어요.
+                     
                       <br />
                       <span style={{ opacity: 0.8 }}>
-                        디저트가 중요하세요, 커피 맛이 중요하세요?
+                       
                       </span>
                     </div>
+
+                    
+
                   </div>
                 </div>
+                  <p className="hint-text">
+                     지역 · 분위기 · 방문 목적 · 맛을 조합해서 자연스럽게 말해보세요.
+                  </p>
+
+                <div className="quick-chips">
+                  
+                  <button type="button" className="quick-chip" onClick={() => onChipClick("커피 맛 좋은 디저트카페 추천해줘")}>☕ 커피 맛 좋은 곳</button>
+                  <button type="button" className="quick-chip"   onClick={() => onChipClick("조용하게 공부하기 좋은 카페 추천해줘")}>📚 공부하기 좋은 조용한 카페</button>
+                  <button type="button" className="quick-chip"  onClick={() => onChipClick("사진 찍기 좋은 감성 카페 추천해줘")}>📸 사진 찍기 좋은 감성 카페</button>
+                  <button type="button" className="quick-chip" onClick={() => onChipClick("데이트하기 좋은 디저트카페 추천해줘")}>👫 데이트 & 수다</button>
+                  </div>
 
                 <div className="chat-input-bar">
                   <div className="chat-input-wrapper">
                     <span className="chat-placeholder-icon">✏️</span>
                     <input
-                      type="text"
-                      className="chat-input-field"
-                      placeholder="예) 광주 상무지구에서 분위기 좋고 케이크 맛있는 카페 추천해줘"
+                      ref={inputRef}
+                     type="text"
+                     className="chat-input-field"
+                     placeholder="예) 광주 상무지구에서 분위기 좋고 케이크 맛있는 카페 추천해줘"
+                     value={input}
+                     onChange={(e) => setInput(e.target.value)}
                     />
                   </div>
-                  <button className="send-btn" type="button">
+                  <button className="send-btn" type="button" onClick={handleSend}>
                     <span>보내기</span>
                     <span className="icon">➤</span>
                   </button>
-                </div>
-
-                <div className="helper-text">
-                  Enter로 전송 · Shift + Enter로 줄바꿈 (추후 스크립트 연동)
                 </div>
               </div>
             </div>
