@@ -1,9 +1,76 @@
-import React from 'react'
+// src/pages/Join.jsx
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import Header from '../components/Header';
 
-const Join = () => {
+export default function Join() {
+  const nav = useNavigate();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  const onSubmit = async (e) => {
+    e.preventDefault();
+    setErr("");
+
+    if (!name.trim() || !email.trim() || !pw.trim()) return setErr("필수 항목을 입력해주세요.");
+    if (pw !== pw2) return setErr("비밀번호가 서로 일치하지 않습니다.");
+
+    try {
+      setLoading(true);
+      // TODO: API 연동 (예: await api.post("/auth/register", { name, email, password: pw }))
+      nav("/login");
+    } catch (e2) {
+      setErr("회원가입에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div>Join</div>
-  )
-}
+     <div className="app-container">
+      <Header />
+    <main className="auth-main">
+      <div className="card">
+        <div className="card-title">회원가입</div>
+        <div className="card-subtitle">간단한 정보 입력으로 가입할 수 있어요.</div>
 
-export default Join
+        <form onSubmit={onSubmit}>
+          <div className="form-group">
+            <label>이름/닉네임</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 광진" />
+          </div>
+
+          <div className="form-group">
+            <label>이메일</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@email.com" />
+          </div>
+
+          <div className="form-group">
+            <label>비밀번호</label>
+            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="비밀번호" />
+          </div>
+
+          <div className="form-group">
+            <label>비밀번호 확인</label>
+            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="비밀번호 확인" />
+          </div>
+
+          {err && <div className="helper" style={{ color: "#d33" }}>{err}</div>}
+
+          <button className="auth-submit-btn" disabled={loading}>
+            {loading ? "가입 중..." : "회원가입"}
+          </button>
+        </form>
+
+        <div className="bottom-text">
+          이미 계정이 있으신가요? <Link to="/login">로그인</Link>
+        </div>
+      </div>
+    </main>
+    </div>
+  );
+}
