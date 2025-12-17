@@ -8,6 +8,7 @@ export default function Main() {
 
   const regionOptions = useMemo(
   () => [
+    { value: "all", label: "전체" },
     { value: "dong-gu", label: "광주 동구" },
     { value: "nam-gu", label: "광주 남구" },
     { value: "buk-gu", label: "광주 북구" },
@@ -74,10 +75,15 @@ export default function Main() {
   const [keyword, setKeyword] = useState("");
 
   const goSearch = (e) => {
-    e.preventDefault();
-    const q = keyword.trim();
-    navigate(`/search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(q)}`);
-  };
+  e.preventDefault();
+  const q = keyword.trim();
+
+  const params = new URLSearchParams();
+  if (region !== "all") params.set("region", region);
+  if (q) params.set("q", q);
+
+  navigate(`/Search?${params.toString()}`);
+};
 
   return (
     <div className="main-page">
@@ -119,7 +125,7 @@ export default function Main() {
                   key={t}
                   type="button"
                   className="chip"
-                  onClick={() => navigate(`/search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
+                  onClick={() => navigate(`/Search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
                 >
                   #{t}
                 </button>
