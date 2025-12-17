@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>디저트카페 추천 챗봇</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+    header.topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      background: #ffffff;
+      border-bottom: 1px solid #e5e5e5;
+    }
+
+    .logo {
+      font-weight: 700;
+      font-size: 18px;
+      cursor: pointer;
+    }
+
+    .top-actions button {
+      margin-left: 8px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid #2f80ed;
+      background: #ffffff;
+      color: #2f80ed;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 24px 28px 32px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 24px;
+    }
+    .desc {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .input-row input[type="text"] {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    .input-row button {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: none;
+      background: #2f80ed;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .input-row button:disabled {
+      background: #999;
+      cursor: default;
+    }
+    .status {
+      font-size: 13px;
+      color: #999;
+      min-height: 18px;
+      margin-bottom: 12px;
+    }
+    .prefs {
+      font-size: 13px;
+      background: #f0f4ff;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      white-space: pre-line;
+    }
+    .results {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .card {
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #fafafa;
+      border: 1px solid #e3e3e3;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card-title {
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .card-region {
+      font-size: 12px;
+      color: #666;
+    }
+    .card-score {
+      font-size: 13px;
+      color: #2f80ed;
+      font-weight: 600;
+    }
+    .card-line {
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .card-label {
+      font-weight: 600;
+      color: #555;
+    }
+    .card-summary {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #444;
+    }
+    .card-url a {
+      font-size: 12px;
+      color: #2f80ed;
+      text-decoration: none;
+    }
+    .card-url a:hover {
+      text-decoration: underline;
+    }
+    /* ✅ 채팅 영역 스타일 */
+    .chat-box {
+      margin-top: 16px;
+      margin-bottom: 16px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 320px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      font-size: 14px;
+    }
+
+    .chat-msg {
+      display: flex;
+      margin-bottom: 8px;
+    }
+
+    .chat-msg.user {
+      justify-content: flex-end;
+    }
+
+    .chat-msg.bot {
+      justify-content: flex-start;
+    }
+
+    .chat-bubble {
+      max-width: 80%;
+      padding: 8px 12px;
+      border-radius: 16px;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    .chat-msg.user .chat-bubble {
+      background: #2f80ed;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-msg.bot .chat-bubble {
+      background: #eee;
+      color: #222;
+      border-bottom-left-radius: 4px;
+    }
+
+  </style>
+</head>
+<body>
+    
+    <!-- 상단바 -->
+    <header class="topbar">
+      <div class="logo" onclick="location.href='/'">
+        광주·전남 디저트카페 지도 
+        </div>
+      <div class="top-actions">
+        <button onclick="location.href='/join.html'">회원가입</button>
+        <button onclick="location.href='/login.html'">로그인</button>
+      </div>
+    </header>
+    
+  <div class="container">
+    <h1>디저트카페 추천 챗봇</h1>
+    <div class="desc">
+      예시) <code>광주에서 사진찍기 좋은 분위기의 커피가 맛있는 카페 추천해줘</code><br />
+      지역, 분위기, 커피/디저트 키워드를 기반으로 추천해줘요.
+    </div>
+
+    <div class="input-row">
+      <input
+        id="queryInput"
+        type="text"
+        placeholder="원하는 카페를 자연어로 적어보세요 :)"
+      />
+      <button id="sendBtn">추천 받기</button>
+    </div>
+
+    <div id="chatBox" class="chat-box"></div>
+
+    <div class="status" id="statusText"></div>
+    <div class="prefs" id="prefsBox" style="display:none;"></div>
+
+    <div class="results" id="resultsBox"></div>
+  </div>
+
+  
+
+  <script>
+    const queryInput = document.getElementById("queryInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const statusText = document.getElementById("statusText");
+    const prefsBox = document.getElementById("prefsBox");
+    const resultsBox = document.getElementById("resultsBox");
+    const chatBox = document.getElementById("chatBox");
+    let lastPrefs = null;
+
+    // ✅ 채팅 버블 추가 함수
+    function appendMessage(sender, text) {
+      if (!text) return;
+
+      const msg = document.createElement("div");
+      msg.className = `chat-msg ${sender}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble";
+      bubble.textContent = text;
+
+      msg.appendChild(bubble);
+      chatBox.appendChild(msg);
+
+      // 스크롤 맨 아래로
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendQuery() {
+      const message = queryInput.value.trim();
+      if (!message) {
+        alert("질문을 입력해 주세요!");
+        return;
+      }
+      
+      appendMessage("user", message);
+
+      sendBtn.disabled = true;
+      statusText.textContent = "추천 중입니다...";
+      // prefsBox.style.display = "none";
+      // prefsBox.textContent = "";
+      resultsBox.innerHTML = "";
+
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ message })
+        });
+
+        if (!res.ok) {
+          throw new Error("서버 에러: " + res.status);
+        }
+
+        const data = await res.json();
+        console.log("응답:", data);
+
+         // ✅ Gemini가 만들어 준 자연어 답변을 봇 메시지로 표시
+        const botMessage =
+          data.message ||
+          "조건에 맞는 카페를 찾지 못했어요. 다른 조건으로 다시 한 번 요청해 주세요 :)";
+        appendMessage("bot", botMessage);
+
+        // prefs 표시
+        const prefs = data.prefs || {};
+        const region = (prefs.region || []).join(", ") || "-";
+        const atmosphere = (prefs.atmosphere || []).join(", ") || "-";
+        const taste = (prefs.taste || []).join(", ") || "-";
+        const purpose = (prefs.purpose || []).join(", ") || "-";
+
+        // prefsBox.style.display = "block";
+        // prefsBox.textContent =
+        //   `인식된 선호도\n` +
+        //   `• 지역: ${region}\n` +
+        //   `• 분위기: ${atmosphere}\n` +
+        //   `• 맛/메뉴: ${taste}\n` +
+        //   `• 목적: ${purpose}`;
+
+        // 결과 카드 렌더링
+        const results = data.results || [];
+        if (results.length === 0) {
+          resultsBox.innerHTML = "<div>조건에 맞는 카페를 찾지 못했어요 🥹</div>";
+        } else {
+          for (const cafe of results) {
+            const card = document.createElement("div");
+            card.className = "card";
+
+            const header = document.createElement("div");
+            header.className = "card-header";
+
+            const left = document.createElement("div");
+            const title = document.createElement("div");
+            title.className = "card-title";
+            title.textContent = cafe.name;
+
+            const regionSpan = document.createElement("div");
+            regionSpan.className = "card-region";
+            regionSpan.textContent = cafe.region || "";
+
+            left.appendChild(title);
+            left.appendChild(regionSpan);
+
+            const score = document.createElement("div");
+            score.className = "card-score";
+            const scoreVal = cafe.score != null ? cafe.score.toFixed(2) : "0.00";
+            score.textContent = `점수: ${scoreVal}`;
+
+            header.appendChild(left);
+            header.appendChild(score);
+            card.appendChild(header);
+
+            // 주소
+            const addrLine = document.createElement("div");
+            addrLine.className = "card-line";
+            addrLine.innerHTML = `<span class="card-label">주소</span> ${cafe.address || ""}`;
+            card.appendChild(addrLine);
+
+            // 분위기
+            const atmLine = document.createElement("div");
+            atmLine.className = "card-line";
+            atmLine.innerHTML = `<span class="card-label">분위기</span> ${(cafe.atmosphere || "").replace(/\|/g, ", ")}`;
+            card.appendChild(atmLine);
+
+            // 맛/메뉴
+            const tasteLine = document.createElement("div");
+            tasteLine.className = "card-line";
+            tasteLine.innerHTML = `<span class="card-label">맛/메뉴</span> ${(cafe.taste || "").replace(/\|/g, ", ")}`;
+            card.appendChild(tasteLine);
+
+            // 목적
+            if (cafe.purpose) {
+              const purposeLine = document.createElement("div");
+              purposeLine.className = "card-line";
+              purposeLine.innerHTML =
+                `<span class="card-label">목적</span> ${(cafe.purpose || "").replace(/\|/g, ", ")}`;
+              card.appendChild(purposeLine);
+            }
+
+            // 동반인
+            if (cafe.companion) {
+              const compLine = document.createElement("div");
+              compLine.className = "card-line";
+              compLine.innerHTML =
+                `<span class="card-label">동반인</span> ${(cafe.companion || "").replace(/\|/g, ", ")}`;
+              card.appendChild(compLine);
+            }
+
+            // 메뉴
+            if (cafe.menu) {
+              const menuLine = document.createElement("div");
+              menuLine.className = "card-line";
+              menuLine.innerHTML =
+                `<span class="card-label">메뉴</span> ${cafe.menu.replace(/[|;]/g, ", ")}`;
+              card.appendChild(menuLine);
+            }
+
+            // 대표 디저트
+            if (cafe.main_dessert) {
+              const mdLine = document.createElement("div");
+              mdLine.className = "card-line";
+              mdLine.innerHTML =
+                `<span class="card-label">대표 디저트</span> ${cafe.main_dessert}`;
+              card.appendChild(mdLine);
+            }
+
+            // 대표 커피
+            if (cafe.main_coffee) {
+              const mcLine = document.createElement("div");
+              mcLine.className = "card-line";
+              mcLine.innerHTML =
+                `<span class="card-label">대표 커피</span> ${cafe.main_coffee}`;
+              card.appendChild(mcLine);
+            }
+
+            // 주차
+            if (cafe.parking) {
+              const parkingLine = document.createElement("div");
+              parkingLine.className = "card-line";
+              parkingLine.innerHTML =
+                `<span class="card-label">주차</span> ${cafe.parking}`;
+              card.appendChild(parkingLine);
+            }
+
+            // 요약
+            if (cafe.summary) {
+              const summaryLine = document.createElement("div");
+              summaryLine.className = "card-summary";
+              summaryLine.textContent = cafe.summary;
+              card.appendChild(summaryLine);
+            }
+
+            // URL
+            if (cafe.url) {
+              const urlLine = document.createElement("div");
+              urlLine.className = "card-line card-url";
+              urlLine.innerHTML = `<a href="${cafe.url}" target="_blank">카카오맵에서 보기</a>`;
+              card.appendChild(urlLine);
+            }
+
+            resultsBox.appendChild(card);
+          }
+        }
+
+        statusText.textContent = "추천 완료 ✔";
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = "요청 중 오류가 발생했습니다.";
+        alert("오류: " + err.message);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", sendQuery);
+    queryInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        sendQuery();
+      }
+    });
+  </script>
+</body>
+</html>

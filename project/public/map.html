@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>디저트카페 지도</title>
+  <link rel="stylesheet" href="/style.css" />
+
+  <!-- 카카오맵 JS SDK (본인 앱키로 교체) -->
+  <script src=""></script>
+</head>h
+<body>
+  <div class="layout">
+    <header class="topbar">
+      <div class="logo" onclick="location.href='/'">
+        <div class="logo-mark"></div>
+        <div>
+          달콤 인덱스
+          <div class="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
+        </div>
+        <button class="sidebar-toggle" onclick="event.stopPropagation(); toggleSidebar()">필터 닫기</button>
+      </div>
+      <div class="top-actions">
+        <button onclick="location.href='/chatbot.html'">챗봇 추천</button>
+        <button onclick="location.href='/login.html'">로그인</button>
+        <button class="primary" onclick="location.href='/join.html'">회원가입</button>
+      </div>
+    </header>
+
+    <!-- 왼쪽 필터 사이드바 -->
+    <aside class="sidebar">
+      <h2>필터</h2>
+
+      <div class="filter-group">
+        <div class="filter-group-title">지역</div>
+        <div class="filter-options">
+          <label><input type="checkbox" name="region" value="gwangju" /> 광주</label>
+          <label><input type="checkbox" name="region" value="naju" /> 나주</label>
+          <label><input type="checkbox" name="region" value="damyang" /> 담양</label>
+          <label><input type="checkbox" name="region" value="janseong" /> 장성</label>
+          <label><input type="checkbox" name="region" value="hwasoon" /> 화순</label>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">분위기</div>
+        <div class="filter-options">
+          <label><input type="checkbox" name="atmosphere" value="감성" /> 감성</label>
+          <label><input type="checkbox" name="atmosphere" value="조용한" /> 조용한</label>
+          <label><input type="checkbox" name="atmosphere" value="사진" /> 사진 / 뷰맛집</label>
+          <label><input type="checkbox" name="atmosphere" value="아늑한" /> 아늑한</label>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">메뉴</div>
+        <div class="filter-options">
+          <label><input type="checkbox" name="taste" value="커피" /> 커피</label>
+          <label><input type="checkbox" name="taste" value="디저트" /> 디저트</label>
+          <label><input type="checkbox" name="taste" value="빵" /> 빵</label>
+          <label><input type="checkbox" name="taste" value="브런치" /> 브런치</label>
+        </div>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-group-title">방문 목적</div>
+        <div class="filter-options">
+          <label><input type="checkbox" name="purpose" value="데이트" /> 데이트</label>
+          <label><input type="checkbox" name="purpose" value="공부" /> 공부 / 작업</label>
+          <label><input type="checkbox" name="purpose" value="카페 투어" /> 카페 투어</label>
+          <label><input type="checkbox" name="purpose" value="수다" /> 수다</label>
+        </div>
+      </div>
+
+      <div class="filter-actions">
+        <button class="search-btn" onclick="searchCafes()">검색</button>
+        <button class="reset-btn" onclick="resetFilters()">초기화</button>
+      </div>
+    </aside>
+
+    <!-- 오른쪽: 지도 + 결과 리스트 -->
+    <main class="main">
+      <div id="map"></div>
+      <div class="result-list" id="resultList"></div>
+    </main>
+  </div>
+
+  <script>
+    let map;
+    let markers = [];
+    let infoWindow;
+
+    function initMap() {
+      const container = document.getElementById("map");
+      const options = {
+        center: new kakao.maps.LatLng(35.1595454, 126.8526012),
+        level: 8
+      };
+      map = new kakao.maps.Map(container, options);
+      infoWindow = new kakao.maps.InfoWindow({ removable: true });
+    }
+
+    function getCheckedValues(name) {
+      return Array.from(document.querySelectorAll('input[name="' + name + '"]:checked'))
+        .map((el) => el.value);
+    }
+
+    function resetFilters() {
+      document.querySelectorAll("aside.sidebar input[type=checkbox]").forEach((el) => {
+        el.checked = false;
+      });
+      clearMarkers();
+      document.getElementById("resultList").innerHTML = "";
+    }
+
+    function clearMarkers() {
+      markers.forEach((m) => m.setMap(null));
+      markers = [];
+    }
+
+    async function searchCafes() {
+      const prefs = {
+        region: getCheckedValues("region"),
+        atmosphere: getCheckedValues("atmosphere"),
+        taste: getCheckedValues("taste"),
+        purpose: getCheckedValues("purpose")
+      };
+
+      try {
+        const res = await fetch("/filter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(prefs)
+        });
+
+        if (!res.ok) throw new Error("서버 오류: " + res.status);
+
+        const data = await res.json();
+        const results = data.results || [];
+
+        renderResults(results);
+        renderMarkers(results);
+      } catch (err) {
+        console.error(err);
+        alert("카페 검색 중 오류가 발생했습니다: " + err.message);
+      }
+    }
+
+    function renderResults(results) {
+      const listEl = document.getElementById("resultList");
+      listEl.innerHTML = "";
+
+      if (results.length === 0) {
+        listEl.innerHTML = "<div style='font-size:13px;'>조건에 맞는 카페를 찾지 못했어요 🥹</div>";
+        return;
+      }
+
+      results.forEach((cafe, idx) => {
+        const card = document.createElement("div");
+        card.className = "result-card";
+        card.dataset.index = idx;
+
+        const score = cafe.score != null ? cafe.score.toFixed(2) : "0.00";
+
+        card.innerHTML = `
+          <div class="result-name">${cafe.name}
+            <span class="result-score">${score}</span>
+          </div>
+          <div class="result-meta">${cafe.region || ""} · ${(cafe.atmosphere || "").replace(/\|/g, ", ")}</div>
+          <div class="result-addr">${cafe.address || ""}</div>
+        `;
+
+        card.addEventListener("click", () => focusMarker(idx));
+        listEl.appendChild(card);
+      });
+    }
+
+    function renderMarkers(results) {
+      clearMarkers();
+      if (results.length === 0) return;
+
+      const bounds = new kakao.maps.LatLngBounds();
+
+      results.forEach((cafe, idx) => {
+        if (!cafe.y || !cafe.x) return;
+
+        const position = new kakao.maps.LatLng(cafe.y, cafe.x);
+        const marker = new kakao.maps.Marker({ map, position });
+
+        kakao.maps.event.addListener(marker, "click", () => {
+          const content = `
+            <div style="padding:5px;font-size:12px;">
+              <div style="font-weight:600;margin-bottom:4px;">${cafe.name}</div>
+              <div style="margin-bottom:2px;">${cafe.address || ""}</div>
+              ${cafe.url ? `<a href="${cafe.url}" target="_blank" style="color:#2f80ed;">카카오맵에서 보기</a>` : ""}
+            </div>
+          `;
+          infoWindow.setContent(content);
+          infoWindow.open(map, marker);
+        });
+
+        markers.push(marker);
+        bounds.extend(position);
+      });
+
+      if (!bounds.isEmpty()) {
+        map.setBounds(bounds);
+      }
+    }
+
+    function focusMarker(index) {
+      const marker = markers[index];
+      if (!marker) return;
+
+      const pos = marker.getPosition();
+      map.setLevel(4);
+      map.panTo(pos);
+      kakao.maps.event.trigger(marker, "click");
+    }
+
+    let isSidebarOpen = true;
+    function toggleSidebar() {
+      const layout = document.querySelector(".layout");
+      const btn = document.querySelector(".sidebar-toggle");
+
+      isSidebarOpen = !isSidebarOpen;
+
+      if (isSidebarOpen) {
+        layout.classList.remove("sidebar-collapsed");
+        btn.textContent = "필터 닫기";
+      } else {
+        layout.classList.add("sidebar-collapsed");
+        btn.textContent = "필터 열기";
+      }
+    }
+
+    window.onload = initMap;
+  </script>
+</body>
+</html>

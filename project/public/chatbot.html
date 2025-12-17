@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>디저트카페 추천 챗봇</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="logo" onclick="location.href='/'">
+      <div class="logo-mark"></div>
+      <div>
+        달콤 인덱스
+        <div class="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
+      </div>
+    </div>
+    <div class="top-nav">
+      <a href="/map.html">지도 검색</a>
+      <a href="/chatbot.html">챗봇 추천</a>
+      <div class="top-actions">
+        <button onclick="location.href='/login.html'">로그인</button>
+        <button class="primary" onclick="location.href='/join.html'">회원가입</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="chat-container">
+    <h1 class="chat-title">대화형 디저트카페 추천</h1>
+    <div class="chat-desc">
+      예시)<br />
+      · <code>나주 분위기 좋은 카페 추천해줘</code><br />
+      · <code>광주에서 사진 찍기 좋은 카페 중에 커피 맛있는 곳 알려줘</code><br />
+      · <code>조용하게 공부하기 좋은 디저트카페</code><br />
+      이전에 말한 지역/조건을 기억해서 이어서 대화해요 😊
+    </div>
+
+    <div class="input-row">
+      <input
+        id="queryInput"
+        type="text"
+        placeholder="원하는 카페를 자연어로 편하게 적어보세요 :)"
+      />
+      <button id="sendBtn">보내기</button>
+    </div>
+
+    <div class="status" id="statusText"></div>
+
+    <!-- ✅ 채팅 내역 -->
+    <div id="chatBox" class="chat-box"></div>
+
+    <!-- 추천 결과 카드 리스트 -->
+    <div class="results" id="resultsBox"></div>
+  </div>
+
+  <script>
+    const queryInput = document.getElementById("queryInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const statusText = document.getElementById("statusText");
+    const chatBox = document.getElementById("chatBox");
+    const resultsBox = document.getElementById("resultsBox");
+
+    // ✅ 마지막으로 인식된 선호도 (특히 region)를 저장
+    let lastPrefs = null;
+
+    // region 코드 → 한글 이름 매핑
+    const REGION_NAME_MAP = {
+      gwangju: "광주",
+      naju: "나주",
+      damyang: "담양",
+      jangseong: "장성",
+      hwasoon: "화순"
+    };
+
+    // ✅ 채팅 버블 추가 함수
+    function appendMessage(sender, text) {
+      if (!text) return;
+
+      const msg = document.createElement("div");
+      msg.className = `chat-msg ${sender}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble";
+      bubble.textContent = text;
+
+      msg.appendChild(bubble);
+      chatBox.appendChild(msg);
+
+      // 스크롤 맨 아래로
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    // ✅ 메시지 전송
+    async function sendQuery() {
+      const originalMessage = queryInput.value.trim();
+      if (!originalMessage) {
+        alert("질문을 입력해 주세요!");
+        return;
+      }
+
+      // 채팅창에는 사용자가 적은 그대로 보여주기
+      appendMessage("user", originalMessage);
+
+      // 서버로 보낼 실제 메시지 (맥락 보정 후)
+      let messageToSend = originalMessage;
+
+      // 🔁 이전 선호에 region 이 있고,
+      // 이번 메시지 안에 지역 단어(광주/나주/담양/장성/화순)가 없으면
+      // 자동으로 "나주 ~~" 같은 식으로 지역을 붙여서 보낸다.
+      try {
+        if (
+          lastPrefs &&
+          Array.isArray(lastPrefs.region) &&
+          lastPrefs.region.length > 0 &&
+          !/(광주|나주|담양|장성|화순)/.test(originalMessage)
+        ) {
+          const regionNames = lastPrefs.region
+            .map((code) => REGION_NAME_MAP[code] || "")
+            .filter(Boolean)
+            .join(" ");
+
+          if (regionNames) {
+            messageToSend = `${regionNames} ${originalMessage}`;
+            console.log(
+              "[front] region 맥락 적용:",
+              originalMessage,
+              "→",
+              messageToSend
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("맥락 적용 중 오류(무시 가능):", e);
+      }
+
+      sendBtn.disabled = true;
+      statusText.textContent = "추천 중입니다...";
+      resultsBox.innerHTML = "";
+
+      try {
+        const res = await fetch("/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ message: messageToSend })
+        });
+
+        if (!res.ok) {
+          throw new Error("서버 에러: " + res.status);
+        }
+
+        const data = await res.json();
+        console.log("응답:", data);
+
+        // ✅ 마지막 prefs 저장 (다음 질문에 맥락으로 사용)
+        if (data.prefs) {
+          lastPrefs = data.prefs;
+        }
+
+        // ✅ 봇의 자연어 답변
+        const botMessage =
+          data.message ||
+          "조건에 맞는 카페를 찾지 못했어요. 다른 조건으로 다시 한 번 요청해 주세요 :)";
+        appendMessage("bot", botMessage);
+
+        // ✅ 카드 리스트 렌더링
+        const results = data.results || [];
+        if (results.length === 0) {
+          const emptyDiv = document.createElement("div");
+          emptyDiv.textContent =
+            "조건에 딱 맞는 카페는 없지만, 다른 키워드로 다시 한 번 물어봐 주세요.";
+          resultsBox.appendChild(emptyDiv);
+        } else {
+          for (const cafe of results) {
+            const card = document.createElement("div");
+            card.className = "card";
+
+            const header = document.createElement("div");
+            header.className = "card-header";
+
+            const left = document.createElement("div");
+            const title = document.createElement("div");
+            title.className = "card-title";
+            title.textContent = cafe.name;
+
+            const regionSpan = document.createElement("div");
+            regionSpan.className = "card-region";
+            regionSpan.textContent = cafe.region || "";
+
+            left.appendChild(title);
+            left.appendChild(regionSpan);
+
+            const score = document.createElement("div");
+            score.className = "card-score";
+            const scoreVal =
+              typeof cafe.score === "number" && cafe.score > 0
+                ? cafe.score.toFixed(2)
+                : "점수 정보 없음";
+            score.textContent = scoreVal;
+
+            header.appendChild(left);
+            header.appendChild(score);
+            card.appendChild(header);
+
+            // 주소
+            const addrLine = document.createElement("div");
+            addrLine.className = "card-line";
+            addrLine.innerHTML = `<span class="card-label">주소</span> ${
+              cafe.address || ""
+            }`;
+            card.appendChild(addrLine);
+
+            // 분위기
+            if (cafe.atmosphere) {
+              const atmLine = document.createElement("div");
+              atmLine.className = "card-line";
+              atmLine.innerHTML =
+                `<span class="card-label">분위기</span> ` +
+                cafe.atmosphere.replace(/\|/g, ", ");
+              card.appendChild(atmLine);
+            }
+
+            // 맛/메뉴 태그
+            if (cafe.taste) {
+              const tasteLine = document.createElement("div");
+              tasteLine.className = "card-line";
+              tasteLine.innerHTML =
+                `<span class="card-label">맛/메뉴</span> ` +
+                cafe.taste.replace(/\|/g, ", ");
+              card.appendChild(tasteLine);
+            }
+
+            // 목적
+            if (cafe.purpose) {
+              const purposeLine = document.createElement("div");
+              purposeLine.className = "card-line";
+              purposeLine.innerHTML =
+                `<span class="card-label">목적</span> ` +
+                cafe.purpose.replace(/\|/g, ", ");
+              card.appendChild(purposeLine);
+            }
+
+            // 동반인
+            if (cafe.companion) {
+              const compLine = document.createElement("div");
+              compLine.className = "card-line";
+              compLine.innerHTML =
+                `<span class="card-label">동반인</span> ` +
+                cafe.companion.replace(/\|/g, ", ");
+              card.appendChild(compLine);
+            }
+
+            // 메뉴
+            if (cafe.menu) {
+              const menuLine = document.createElement("div");
+              menuLine.className = "card-line";
+              menuLine.innerHTML =
+                `<span class="card-label">메뉴</span> ` +
+                cafe.menu.replace(/[|;]/g, ", ");
+              card.appendChild(menuLine);
+            }
+
+            // 대표 디저트
+            if (cafe.main_dessert) {
+              const mdLine = document.createElement("div");
+              mdLine.className = "card-line";
+              mdLine.innerHTML =
+                `<span class="card-label">대표 디저트</span> ${
+                  cafe.main_dessert
+                }`;
+              card.appendChild(mdLine);
+            }
+
+            // 대표 커피
+            if (cafe.main_coffee) {
+              const mcLine = document.createElement("div");
+              mcLine.className = "card-line";
+              mcLine.innerHTML =
+                `<span class="card-label">대표 커피</span> ${
+                  cafe.main_coffee
+                }`;
+              card.appendChild(mcLine);
+            }
+
+            // 주차
+            if (cafe.parking) {
+              const pkLine = document.createElement("div");
+              pkLine.className = "card-line";
+              pkLine.innerHTML = `<span class="card-label">주차</span> ${
+                cafe.parking
+              }`;
+              card.appendChild(pkLine);
+            }
+
+            if (cafe.url) {
+              const urlLine = document.createElement("div");
+              urlLine.className = "card-line card-url";
+              urlLine.innerHTML = `<a href="${cafe.url}" target="_blank">카카오맵에서 보기</a>`;
+              card.appendChild(urlLine);
+            }
+
+            resultsBox.appendChild(card);
+          }
+        }
+
+        statusText.textContent = "추천 완료 ✔";
+        queryInput.value = "";
+      } catch (err) {
+        console.error(err);
+        statusText.textContent = "요청 중 오류가 발생했습니다.";
+        alert("오류: " + err.message);
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", sendQuery);
+    queryInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        sendQuery();
+      }
+    });
+  </script>
+</body>
+</html>
