@@ -1,28 +1,45 @@
+// src/components/KakaoMap.jsx
 import { useEffect, useRef } from "react";
+import { loadKakao } from "../lib/loadKakao.js";
 
-const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
+const KakaoMap = ({ results = [], focusedIndex, setFocusedIndex }) => {
   const mapRef = useRef(null);
   const containerRef = useRef(null);
-  const markersRef = useRef([]); // ✅ results 인덱스 그대로 저장(중요)
+  const markersRef = useRef([]);
   const infoWindowRef = useRef(null);
 
-  // 1) 지도 초기화 (최초 1회)
+  // 1) 지도 초기화 (최초 1회) - ✅ SDK 로드 완료 후 실행
   useEffect(() => {
-    if (!window.kakao) return;
+    let alive = true;
 
-    const options = {
-      center: new window.kakao.maps.LatLng(35.1595454, 126.8526012),
-      level: 8,
+    (async () => {
+      try {
+        const kakao = await loadKakao();
+        if (!alive) return;
+        if (!containerRef.current) return;
+
+        const options = {
+          center: new kakao.maps.LatLng(35.1595454, 126.8526012),
+          level: 8,
+        };
+
+        const map = new kakao.maps.Map(containerRef.current, options);
+        mapRef.current = map;
+        infoWindowRef.current = new kakao.maps.InfoWindow({ removable: true });
+      } catch (e) {
+        console.error("[KakaoMap] SDK load/init failed:", e);
+      }
+    })();
+
+    return () => {
+      alive = false;
     };
-
-    const map = new window.kakao.maps.Map(containerRef.current, options);
-    mapRef.current = map;
-    infoWindowRef.current = new window.kakao.maps.InfoWindow({ removable: true });
   }, []);
 
   // 2) results 변경 시 마커 렌더링
   useEffect(() => {
     if (!mapRef.current) return;
+    if (!window.kakao?.maps) return;
 
     // 기존 마커 제거
     markersRef.current.forEach((m) => m && m.setMap(null));
@@ -41,9 +58,7 @@ const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
         position,
       });
 
-      // 마커 클릭 이벤트
       window.kakao.maps.event.addListener(marker, "click", () => {
-        // ✅ 마커 클릭 시 리스트도 하이라이트
         setFocusedIndex?.(idx);
 
         const content = `
@@ -57,11 +72,10 @@ const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
             }
           </div>
         `;
-        infoWindowRef.current.setContent(content);
-        infoWindowRef.current.open(mapRef.current, marker);
+        infoWindowRef.current?.setContent(content);
+        infoWindowRef.current?.open(mapRef.current, marker);
       });
 
-      // ✅ results 인덱스 그대로 저장
       markersRef.current[idx] = marker;
       bounds.extend(position);
     });
@@ -71,13 +85,13 @@ const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
     }
   }, [results, setFocusedIndex]);
 
-  // 3) 리스트 카드 클릭(focusedIndex) → 지도 이동 + 인포윈도우
+  // 3) 리스트 클릭 → 지도 이동
   useEffect(() => {
     if (focusedIndex === null || focusedIndex === undefined) return;
+    if (!window.kakao?.maps) return;
 
     const marker = markersRef.current?.[focusedIndex];
     const map = mapRef.current;
-
     if (!map || !marker) return;
 
     map.setLevel(4);
@@ -85,7 +99,7 @@ const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
     window.kakao.maps.event.trigger(marker, "click");
   }, [focusedIndex]);
 
-  return <div id="map" ref={containerRef} style={{ width: "100%", height: "100%" }} />;
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 };
 
 export default KakaoMap;
