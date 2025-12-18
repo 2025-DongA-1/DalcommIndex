@@ -1,9 +1,11 @@
 // Map.jsx (지도 + 결과 패널: 검색 전 숨김 / 검색 후 표시)
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import KakaoMap from "../components/KakaoMap";
+import PlacePopup from "../components/PlacePopup";
+
 
 function Map() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -15,6 +17,26 @@ function Map() {
 
   // 상단 검색바 입력값
   const [topQuery, setTopQuery] = useState("");
+
+
+// (추가)
+const mapWrapRef = useRef(null);
+
+const [popupOpen, setPopupOpen] = useState(false);
+const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
+const [popupPlace, setPopupPlace] = useState(null);
+
+const openPopupAtClick = (e, place) => {
+  const rect = mapWrapRef.current.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  setPopupPos({ x, y });
+  setPopupPlace(place);
+  setPopupOpen(true);
+};
+
+
+
 
   // 백엔드 주소 (Vite dev에서 5173 ↔ 서버 3000 분리 대비)
   const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -92,6 +114,8 @@ function Map() {
       menu: menuKeyword ? [menuKeyword] : [],
     };
 
+ 
+
     await handleSearch(prefs);
   };
 
@@ -146,12 +170,25 @@ function Map() {
 
           {/* ✅ 지도 + 결과 패널 */}
           <div className="map-split-layout">
-            <div className="map-area">
+            <div className="map-area"
+                  ref={mapWrapRef}
+                   style={{ position: "relative" }}
+                    onClick={(e) => openPopupAtClick(e, { name: "카페 이름", address: " 위치", content : '내용'})}>
+
+
               <KakaoMap
                 results={searchResults}
                 focusedIndex={focusedIndex}
                 setFocusedIndex={setFocusedIndex}
               />
+
+               <PlacePopup
+               open={popupOpen}
+                pos={popupPos}
+                place={popupPlace}
+                 onClose={() => setPopupOpen(false)}
+  />
+
             </div>
 
             {/* ✅ 검색 전엔 아예 렌더링 안 함 */}
@@ -179,12 +216,13 @@ function Map() {
                           key={cafe?.id || `${cafe?.name}-${idx}`}
                           type="button"
                           className={`result-card ${isActive ? "active" : ""}`}
-                          onClick={() => {
+                          onClick={(e) => {
                             if (!hasCoord) {
                               alert("이 카페는 좌표 정보가 없어 지도 이동이 어렵습니다.");
                               return;
                             }
                             setFocusedIndex(idx);
+                            openPopupAtClick(e, cafe);
                           }}
                           title={hasCoord ? "클릭하면 지도에서 위치로 이동합니다" : "좌표 정보 없음"}
                         >
