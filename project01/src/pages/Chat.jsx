@@ -1,53 +1,109 @@
-import React, {useRef, useState, useEffect} from "react"
-import {useNavigate} from "react-router-dom"
-
-
+import React, { useRef, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const Chat = () => {
-  const navigate = useNavigate()
+  const API_BASE = import.meta.env.VITE_API_BASE || "";
+
+  async function apiFetch(path, { method = "POST", body } = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "요청 실패");
+    return data;
+  }
+
+  const navigate = useNavigate();
 
   const [input, setInput] = useState("");
-const inputRef = useRef(null);
+  const inputRef = useRef(null);
 
-const onChipClick = (text) => {
-  setInput(text);
-  setTimeout(() => inputRef.current?.focus(), 0);
-};
+  const onChipClick = (text) => {
+    setInput(text);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
 
-const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [isSending, setIsSending] = useState(false);
 
-const handleSend = () => {
-  const text = input.trim();
-  if (!text)return;
+  const formatNow = () => {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `오늘 · ${hh}:${mm}`;
+  };
 
-  setMessages((prev) => [...prev, { sender: "user", text, time: formatNow() }]);
-  setInput("");
-  setTimeout(() => inputRef.current?.focus(), 0);
-};
+  const formatToday = () => {
+    const d = new Date();
+    const week = ["일", "월", "화", "수", "목", "금", "토"][d.getDay()];
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}.${mm}.${dd} (${week})`;
+  };
 
-const scrollRef = useRef(null);
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || isSending) return;
 
-useEffect(() => {
-  if (!scrollRef.current) return;
-  scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-}, [messages]);
+    const now = formatNow();
 
-const formatNow = () => {
-  const d = new Date();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `오늘 · ${hh}:${mm}`;
-};
-const [helloTime] = useState(formatNow());
+    // 1) 사용자 메시지 추가
+    setMessages((prev) => [...prev, { sender: "user", text, time: now }]);
+    setInput("");
+    setIsSending(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
 
-const formatToday = () => {
-  const d = new Date();
-  const week = ["일","월","화","수","목","금","토"][d.getDay()];
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}.${mm}.${dd} (${week})`;
-};
+    // 2) 봇 “대기 메시지”
+    const pendingId = `pending_${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: pendingId,
+        sender: "bot",
+        text: "답변을 생성 중입니다…",
+        time: formatNow(),
+        pending: true,
+      },
+    ]);
+
+    try {
+      const data = await apiFetch("/api/chat", {
+        method: "POST",
+        body: { message: text },
+      });
+
+      const botText = (data?.message || "응답을 받지 못했습니다.").toString();
+      const results = Array.isArray(data?.results) ? data.results : [];
+      const warning = data?.warning || "";
+
+      // 3) pending 메시지를 실제 답변으로 교체
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId ? { ...m, pending: false, text: botText, results, warning } : m
+        )
+      );
+    } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId
+            ? { ...m, pending: false, text: `오류가 발생했어요: ${e?.message || e}` }
+            : m
+        )
+      );
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
 
   return (
     <>
@@ -55,18 +111,12 @@ const formatToday = () => {
         {`
 @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap");
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ✅ React에선 body 전역 스타일이 충돌할 수 있어서
-   body 대신 .chat-page 래퍼에 동일 스타일 적용 */
 .chat-page {
   min-height: 100vh;
   font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: white
+  background: white;
   color: #111827;
   display: flex;
   justify-content: center;
@@ -74,7 +124,6 @@ const formatToday = () => {
   padding: 24px;
 }
 
-/* 전체 카드 */
 .app-shell {
   width: 100%;
   max-width: 1200px;
@@ -89,7 +138,6 @@ const formatToday = () => {
   padding: 18px 22px 20px;
 }
 
-/* 상단바 */
 .top-bar {
   display: flex;
   align-items: center;
@@ -99,40 +147,13 @@ const formatToday = () => {
   margin-bottom: 16px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.brand { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.logo-mark { width: 42px; height: 42px; object-fit: contain; border-radius: 10px; }
 
-.brand-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #f97316, #ec4899);
-  color: #fff;
-  font-weight: 700;
-  font-size: 18px;
-}
+.brand-text-main { font-size: 28px; font-weight: 700; }
+.brand-text-sub { font-size: 12px; color: #9ca3af; }
 
-.brand-text-main {
-  font-size: 28px;
-  font-weight: 700;
-}
-
-.brand-text-sub {
-  font-size: 12px;
-  color: #9ca3af;
-}
-
-.nav-buttons {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
+.nav-buttons { display: flex; gap: 8px; align-items: center; }
 
 .pill-btn {
   border-radius: 999px;
@@ -156,51 +177,6 @@ const formatToday = () => {
   box-shadow: 0 8px 20px rgba(148, 163, 184, 0.35);
 }
 
-.pill-btn.primary {
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.45);
-}
-
-.pill-btn.primary:hover {
-  filter: brightness(1.05);
-}
-
-/* 상단 설명 영역 */
-.hero {
-  padding: 10px 4px 4px;
-  margin-bottom: 10px;
-}
-
-.hero-title {
-  font-size: 24px;
-  font-weight: 800;
-  margin-bottom: 4px;
-}
-
-.hero-sub {
-  font-size: 14px;
-  color: #6b7280;
-  margin-bottom: 10px;
-}
-
-.hero-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.hero-chip {
-  font-size: 11px;
-  padding: 5px 9px;
-  border-radius: 999px;
-  background: #f3f4ff;
-  color: #4b5563;
-  border: 1px solid #e5e7eb;
-}
-
-/* 메인 챗봇 카드 */
 .chat-layout {
   flex: 1;
   display: grid;
@@ -209,7 +185,6 @@ const formatToday = () => {
   margin-top: 8px;
 }
 
-/* 챗 패널 (왼쪽) */
 .chat-panel {
   padding: 16px 16px 14px;
   border-radius: 20px;
@@ -226,47 +201,22 @@ const formatToday = () => {
   margin-bottom: 10px;
 }
 
-.bot-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
+.bot-info { display: flex; align-items: center; gap: 10px; }
 .bot-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 14px;
+  width: 34px; height: 34px; border-radius: 14px;
   background: linear-gradient(135deg, #4f46e5, #ec4899);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 18px;
 }
+.bot-text-main { font-size: 14px; font-weight: 600; }
 
-.bot-text-main {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.status-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
+.status-wrap { display: flex; align-items: center; gap: 6px; }
 .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
+  width: 8px; height: 8px; border-radius: 999px;
   background: #22c55e;
   box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.18);
 }
-
-.status-text {
-  font-size: 11px;
-  color: #6b7280;
-}
+.status-text { font-size: 11px; color: #6b7280; }
 
 .chat-body {
   flex: 1;
@@ -287,20 +237,11 @@ const formatToday = () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  align-items: stretch; 
+  align-items: stretch;
 }
 
-.bubble-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  width: 100%;  
-}
-
-.bubble-row.user {
-  justify-content: flex-end;
-  width: 100%;
-}
+.bubble-row { display: flex; align-items: flex-end; gap: 6px; width: 100%; }
+.bubble-row.user { justify-content: flex-end; width: 100%; }
 
 .bubble {
   max-width: 80%;
@@ -310,34 +251,34 @@ const formatToday = () => {
   line-height: 1.5;
 }
 
-.bubble.bot {
+.bubble.bot { background: #f3f4ff; color: #111827; border-radius: 16px 16px 16px 4px; }
+.bubble.user { background: linear-gradient(135deg, #2563eb, #4f46e5); color: #ffffff; border-radius: 16px 16px 4px 16px; }
+
+.time { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+.time.user { text-align: right; }
+
+.hint-text{
+  margin-top: 18px;
+  margin-bottom: -10px;
+  font-size: 13px;
+  color:#9ca3af;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.quick-chips{ display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 6px 2px; }
+.quick-chip{
+  border: 1px solid #e5e7eb;
   background: #f3f4ff;
-  color: #111827;
-  border-radius: 16px 16px 16px 4px;
+  color: #374151;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
 }
+.quick-chip:hover{ filter: brightness(0.98); }
 
-.bubble.user {
-  background: linear-gradient(135deg, #2563eb, #4f46e5);
-  color: #ffffff;
-  border-radius: 16px 16px 4px 16px;
-}
-
-.time {
-  font-size: 10px;
-  color: #9ca3af;
-  margin-top: 1px;
-}
-
-.time.user {
-  text-align: right;
-}
-
-.chat-input-bar {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+.chat-input-bar { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
 
 .chat-input-wrapper {
   flex: 1;
@@ -357,10 +298,7 @@ const formatToday = () => {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
 }
 
-.chat-placeholder-icon {
-  font-size: 16px;
-  opacity: 0.5;
-}
+.chat-placeholder-icon { font-size: 16px; opacity: 0.5; }
 
 .chat-input-field {
   border: none;
@@ -383,22 +321,9 @@ const formatToday = () => {
   gap: 6px;
   box-shadow: 0 12px 26px rgba(59, 130, 246, 0.5);
 }
+.send-btn:hover { filter: brightness(1.05); }
+.send-btn:disabled { opacity: 0.6; cursor: not-allowed; filter: none; box-shadow: none; }
 
-.send-btn span.icon {
-  font-size: 15px;
-}
-
-.send-btn:hover {
-  filter: brightness(1.05);
-}
-
-.helper-text {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 4px;
-}
-
-/* 오른쪽: 예시 / 태그 영역 */
 .side-panel {
   padding: 14px 14px 12px;
   border-radius: 20px;
@@ -409,12 +334,7 @@ const formatToday = () => {
   gap: 10px;
 }
 
-.side-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #4b5563;
-  margin-bottom: 4px;
-}
+.side-title { font-size: 15px; font-weight: 600; color: #4b5563; margin-bottom: 4px; }
 
 .example-list {
   list-style: none;
@@ -426,111 +346,17 @@ const formatToday = () => {
   padding: 8px 10px;
   border: 1px dashed #e5e7eb;
 }
+.example-list li + li { margin-top: 2px; }
+.example-list li{ cursor: pointer; font-weight: 400; transition: font-weight 0.15s ease, color 0.15s ease; }
+.example-list li:hover{ font-weight: 700; color: #111827; }
 
-.example-list li + li {
-  margin-top: 2px;
-}
+.tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag-chip { padding: 5px 8px; border-radius: 999px; border: 1px solid #e5e7eb; font-size: 11px; background: #f9fafb; color: #4b5563; }
 
-.tag-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
+.side-note { font-size: 11px; color: #9ca3af; }
 
-.tag-chip {
-  padding: 5px 8px;
-  border-radius: 999px;
-  border: 1px solid #e5e7eb;
-  font-size: 11px;
-  background: #f9fafb;
-  color: #4b5563;
-}
-
-.side-note {
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-/* 반응형 */
-@media (max-width: 880px) {
-  .chat-page {
-    padding: 16px;
-  }
-
-  .app-shell {
-    padding: 14px 14px 16px;
-  }
-
-  .chat-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 600px) {
-  .top-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .nav-buttons {
-    align-self: flex-end;
-  }
-
-  .brand-text-sub {
-    display: none;
-  }
-}
-
-.quick-chips{
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 6px 2px;
-}
-
-.quick-chip{
-  border: 1px solid #e5e7eb;
-  background: #f3f4ff;
-  color: #374151;
-  font-size: 12px;
-  padding: 7px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.quick-chip:hover{
-  filter: brightness(0.98);
-}
-
-
-/* ✅ '지역 · 분위기 …' 문장을 칩에 더 가깝게 */
-.hint-text{
-  margin-top: 18px;   /* 문장을 아래로 내림 (값 늘릴수록 더 내려감) */
-  margin-bottom: -10px; /* 문장과 칩 사이 간격(작게) */
-  font-size: 13px;      /* 입력칸 텍스트 느낌 */
-  color: #6b7280;       /* 입력칸 placeholder 같은 회색 */
-  font-weight: 400;
-  line-height: 1.4;
-  color:#9ca3af; 
-
-}
-
-.date-divider{
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0 12px;
-}
-
-.date-divider::before,
-.date-divider::after{
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: #e5e7eb;
-}
-
+.date-divider{ display: flex; align-items: center; gap: 10px; margin: 10px 0 12px; }
+.date-divider::before, .date-divider::after{ content: ""; flex: 1; height: 1px; background: #e5e7eb; }
 .date-divider span{
   font-size: 12px;
   color: #9ca3af;
@@ -540,59 +366,103 @@ const formatToday = () => {
   border: 1px solid #e5e7eb;
 }
 
-.example-list li{
+/* ✅ 추천 카드 UI */
+.result-wrap{
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.result-warning{
+  font-size: 12px;
+  color: #9ca3af;
+}
+.result-card{
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 10px;
+}
+.result-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.result-name{
+  font-weight: 800;
+  font-size: 14px;
+}
+.result-addr{
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.result-score{
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.result-summary{
+  font-size: 12px;
+  color: #374151;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+.result-actions{
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.result-btn, .result-link{
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
   cursor: pointer;
-  font-weight: 400;
-  transition: font-weight 0.15s ease, color 0.15s ease;
+  text-decoration: none;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+}
+.result-link{ background: #ffffff; }
+.result-btn:hover, .result-link:hover{ filter: brightness(0.98); }
+
+@media (max-width: 880px) {
+  .chat-page { padding: 16px; }
+  .app-shell { padding: 14px 14px 16px; }
+  .chat-layout { grid-template-columns: 1fr; }
 }
 
-.example-list li:hover{
-  font-weight: 700;   /* ✅ 글씨 진하게 */
-  color: #111827;     /* ✅ 더 진한 색 */
+@media (max-width: 600px) {
+  .top-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .nav-buttons { align-self: flex-end; }
+  .brand-text-sub { display: none; }
 }
-
         `}
       </style>
-
-
-
-
 
       <div className="chat-page">
         <div className="app-shell">
           {/* 상단바 */}
           <header className="top-bar">
-            <div className="brand" onClick={()=>navigate("/")}>
-              <img className = "logo-mark" src="/로고.png" alt="로고" />
+            <div className="brand" onClick={() => navigate("/")}>
+              <img className="logo-mark" src="/로고.png" alt="로고" />
               <div>
                 <div className="brand-text-main">달콤인덱스 챗봇</div>
                 <p>문장 한 줄로 원하는 디저트 카페 찾기</p>
-  
-              
-                  
-              
                 <div className="brand-text-sub"></div>
               </div>
             </div>
-            
+
             <div className="nav-buttons">
-              <button 
-                className = "pill-btn ghost"
-                type = "button"
-                onClick = {()=>navigate("/")}>
-                  Main으로 돌아가기
-                  </button>
-
+              <button className="pill-btn ghost" type="button" onClick={() => navigate("/")}>
+                Main으로 돌아가기
+              </button>
             </div>
-
-            
-
-
           </header>
 
-        
-
-          {/* 메인 레이아웃 (챗봇 + 예시/태그) */}
           <section className="chat-layout">
             {/* 왼쪽: 챗봇 */}
             <div className="chat-panel">
@@ -612,71 +482,144 @@ const formatToday = () => {
               <div className="chat-body">
                 <div className="chat-scroll" ref={scrollRef}>
                   <div className="date-divider">
-                  <span>{formatToday()}</span>
+                    <span>{formatToday()}</span>
                   </div>
-
 
                   <div className="bubble-row bot">
                     <div className="bubble bot">
                       안녕하세요! 😊<br />
-                      원하는 <b>지역</b>과 <b>분위기</b>, <b>목적</b>을 알려주시면
-                     딱 맞는 디저트카페를 추천해드릴게요.
+                      원하는 <b>지역</b>과 <b>분위기</b>, <b>목적</b>을 알려주시면 딱 맞는 디저트카페를
+                      추천해드릴게요.
                     </div>
                   </div>
-                  
-                  
-                 {messages
-                   .filter((m) => (m.text ?? "").trim().length > 0)
-                   .map((m, idx) => {
-                  const next = messages[idx + 1];
-                  const showTime = !next || next.time !== m.time;
 
-                    return (
-                   <React.Fragment key={idx}>
-                   <div className={`bubble-row ${m.sender}`}>
-                    <div className={`bubble ${m.sender}`}>{m.text}</div>
-                   </div>
-                   {showTime && <div className={`time ${m.sender}`}>{m.time}</div>}
-                    </React.Fragment>
-    );
-  })}
+                  {/* ✅ 메시지 렌더(시간 표시도 filtered 기준으로 정상) */}
+                  {(() => {
+                    const filtered = messages.filter((m) => (m.text ?? "").trim().length > 0);
 
-                  
+                    return filtered.map((m, idx) => {
+                      const next = filtered[idx + 1];
+                      const showTime = !next || next.time !== m.time;
 
-                  
-                  
+                      return (
+                        <React.Fragment key={m.id || `${m.sender}_${idx}`}>
+                          <div className={`bubble-row ${m.sender}`}>
+                            <div className={`bubble ${m.sender}`} style={{ whiteSpace: "pre-wrap" }}>
+                              {m.text}
 
+                              {/* ✅ 봇 메시지에 results/warning이 있으면 카드 출력 */}
+                              {m.sender === "bot" && (
+                                <>
+                                  {(m.warning || (Array.isArray(m.results) && m.results.length > 0)) && (
+                                    <div className="result-wrap">
+                                      {m.warning ? (
+                                        <div className="result-warning">{m.warning}</div>
+                                      ) : null}
 
-                    
+                                      {Array.isArray(m.results) &&
+                                        m.results.map((c) => (
+                                          <div key={c.id} className="result-card">
+                                            <div className="result-top">
+                                              <div>
+                                                <div className="result-name">{c.name}</div>
+                                                <div className="result-addr">{c.address}</div>
+                                              </div>
+                                              <div className="result-score">
+                                                점수 {Number(c.score || 0).toFixed(1)}
+                                              </div>
+                                            </div>
 
-               
+                                            {c.summary ? (
+                                              <div className="result-summary">{c.summary}</div>
+                                            ) : null}
+
+                                            <div className="result-actions">
+                                              <button
+                                                type="button"
+                                                className="result-btn"
+                                                onClick={() => navigate(`/cafe/${c.id}`)}
+                                              >
+                                                상세보기
+                                              </button>
+
+                                              {c.url ? (
+                                                <a
+                                                  className="result-link"
+                                                  href={c.url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                >
+                                                  지도 열기
+                                                </a>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          {showTime ? <div className={`time ${m.sender}`}>{m.time}</div> : null}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}
                 </div>
-                  <p className="hint-text">
-                     지역 · 분위기 · 방문 목적 · 맛을 조합해서 자연스럽게 말해보세요.
-                  </p>
+
+                <p className="hint-text">지역 · 분위기 · 방문 목적 · 맛을 조합해서 자연스럽게 말해보세요.</p>
 
                 <div className="quick-chips">
-                  
-                  <button type="button" className="quick-chip" onClick={() => onChipClick("커피 맛 좋은 디저트카페 추천해줘")}>☕ 커피 맛 좋은 곳</button>
-                  <button type="button" className="quick-chip"   onClick={() => onChipClick("조용하게 공부하기 좋은 카페 추천해줘")}>📚 공부하기 좋은 조용한 카페</button>
-                  <button type="button" className="quick-chip"  onClick={() => onChipClick("사진 찍기 좋은 감성 카페 추천해줘")}>📸 사진 찍기 좋은 감성 카페</button>
-                  <button type="button" className="quick-chip" onClick={() => onChipClick("데이트하기 좋은 디저트카페 추천해줘")}>👫 데이트 & 수다</button>
-                  </div>
+                  <button
+                    type="button"
+                    className="quick-chip"
+                    onClick={() => onChipClick("커피 맛 좋은 디저트카페 추천해줘")}
+                  >
+                    ☕ 커피 맛 좋은 곳
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-chip"
+                    onClick={() => onChipClick("조용하게 공부하기 좋은 카페 추천해줘")}
+                  >
+                    📚 공부하기 좋은 조용한 카페
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-chip"
+                    onClick={() => onChipClick("사진 찍기 좋은 감성 카페 추천해줘")}
+                  >
+                    📸 사진 찍기 좋은 감성 카페
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-chip"
+                    onClick={() => onChipClick("데이트하기 좋은 디저트카페 추천해줘")}
+                  >
+                    👫 데이트 & 수다
+                  </button>
+                </div>
 
                 <div className="chat-input-bar">
                   <div className="chat-input-wrapper">
                     <span className="chat-placeholder-icon">✏️</span>
                     <input
                       ref={inputRef}
-                     type="text"
-                     className="chat-input-field"
-                     placeholder="예) 광주 상무지구에서 분위기 좋고 케이크 맛있는 카페 추천해줘"
-                     value={input}
-                     onChange={(e) => setInput(e.target.value)}
+                      type="text"
+                      className="chat-input-field"
+                      placeholder="예) 광주 상무지구에서 분위기 좋고 케이크 맛있는 카페 추천해줘"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleSend();
+                      }}
                     />
                   </div>
-                  <button className="send-btn" type="button" onClick={handleSend}>
-                    <span>보내기</span>
+
+                  <button className="send-btn" type="button" onClick={handleSend} disabled={isSending}>
+                    <span>{isSending ? "전송 중..." : "보내기"}</span>
                     <span className="icon">➤</span>
                   </button>
                 </div>
@@ -685,12 +628,11 @@ const formatToday = () => {
 
             {/* 오른쪽: 예시 & 태그 */}
             <aside className="side-panel">
-              
-
               <div>
                 <div className="side-title" style={{ marginTop: 6 }}>
                   자주 쓰이는 키워드
                 </div>
+
                 <div className="tag-grid">
                   <span className="tag-chip">나주</span>
                   <span className="tag-chip">광주 상무지구</span>
@@ -704,19 +646,25 @@ const formatToday = () => {
                   <span className="tag-chip">케이크</span>
                   <span className="tag-chip">커피</span>
                 </div>
+
                 <br />
-                
 
                 <div>
-                <div className="side-title">예시 문장</div>
-                <ul className="example-list">
-                  <li  onClick={() => onChipClick("광주에서 사진 찍기 좋은 감성 카페 추천해줘")} >· 광주에서 사진 찍기 좋은 감성 카페 추천해줘</li>
-                  <li  onClick={() => onChipClick("담양에서 가족이랑 가기 좋은 디저트카페 있어?")}>· 담양에서 가족이랑 가기 좋은 디저트카페 있어?</li>
-                  <li  onClick={() => onChipClick("화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘")}>· 화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘</li>
-                </ul>
+                  <div className="side-title">예시 문장</div>
+                  <ul className="example-list">
+                    <li onClick={() => onChipClick("광주에서 사진 찍기 좋은 감성 카페 추천해줘")}>
+                      · 광주에서 사진 찍기 좋은 감성 카페 추천해줘
+                    </li>
+                    <li onClick={() => onChipClick("담양에서 가족이랑 가기 좋은 디저트카페 있어?")}>
+                      · 담양에서 가족이랑 가기 좋은 디저트카페 있어?
+                    </li>
+                    <li onClick={() => onChipClick("화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘")}>
+                      · 화순 쪽에서 커피 맛 괜찮고 조용한 카페 알려줘
+                    </li>
+                  </ul>
+                </div>
               </div>
-              </div>
-              
+
               <p className="side-note">
                 원하는 조합으로 편하게 말만 해주세요.
                 <br />

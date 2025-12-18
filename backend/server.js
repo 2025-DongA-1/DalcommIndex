@@ -41,6 +41,66 @@ try {
   console.warn("        reason:", e.message);
 }
 
+/* 챗봇 테스트용 */
+const CHATBOT_MOCK = process.env.CHATBOT_MOCK === "1";
+
+const mockCafes = [
+  {
+    id: "mock_1",
+    region: "gwangju",
+    name: "(샘플) 달콤정원",
+    address: "광주 서구 상무대로 123",
+    url: "https://place.map.kakao.com/",
+    summary: "조용하고 감성적인 분위기에서 케이크가 인기인 카페입니다.",
+    atmosphere_norm: "조용한|감성|사진",
+    taste_norm: "디저트|커피",
+    purpose_norm: "데이트|작업",
+    companion_norm: "친구|연인",
+    atmosphereSet: new Set(["조용한", "감성", "사진"]),
+    tasteSet: new Set(["디저트", "커피"]),
+    purposeSet: new Set(["데이트", "작업"]),
+    menu: "케이크, 휘낭시에",
+    main_dessert: "케이크",
+    main_coffee: "라떼",
+    parking: "가능",
+    photo_spot_flag: true,
+    coffee_score: 4.2,
+    dessert_score: 4.6,
+    date_score: 4.5,
+    study_score: 4.0,
+    popularity_score: 80,
+    x: null,
+    y: null,
+  },
+  {
+    id: "mock_2",
+    region: "naju",
+    name: "(샘플) 나주베이크",
+    address: "전남 나주시 빛가람로 45",
+    url: "https://place.map.kakao.com/",
+    summary: "빵/디저트 종류가 다양하고 주차가 편한 편입니다.",
+    atmosphere_norm: "넓은|쾌적",
+    taste_norm: "빵|디저트",
+    purpose_norm: "가족|수다",
+    companion_norm: "가족|친구",
+    atmosphereSet: new Set(["넓은", "쾌적"]),
+    tasteSet: new Set(["빵", "디저트"]),
+    purposeSet: new Set(["가족", "수다"]),
+    menu: "소금빵, 스콘",
+    main_dessert: "소금빵",
+    main_coffee: "아메리카노",
+    parking: "가능",
+    photo_spot_flag: false,
+    coffee_score: 3.8,
+    dessert_score: 4.4,
+    date_score: 3.6,
+    study_score: 3.4,
+    popularity_score: 60,
+    x: null,
+    y: null,
+  },
+];
+
 /** 헬스/상태 */
 app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.get("/api/status", (req, res) =>
@@ -102,10 +162,15 @@ app.post("/api/filter", handleFilter);
 /** 챗봇 추천 */
 app.post("/api/chat", async (req, res) => {
   try {
-    if (!cafes.length) {
+    // ✅ 데이터셋 결정: CSV/DB 있으면 그걸 쓰고, 없으면(원할 때만) mock 사용
+    const cafesForChat = cafes.length ? cafes : CHATBOT_MOCK ? mockCafes : [];
+    const warning =
+      cafes.length ? null : CHATBOT_MOCK ? "현재 카페 데이터가 없어 샘플 데이터로 응답 중입니다. (CHATBOT_MOCK=1)" : null;
+
+    if (!cafesForChat.length) {
       return res.json({
         ok: true,
-        message: "아직 카페 데이터가 준비되지 않았습니다. (CSV/DB 연결 후 추천이 가능합니다.)",
+        message: "아직 카페 데이터(CSV/DB)가 준비되지 않았습니다. 우선 챗봇 연결만 확인하려면 .env에 CHATBOT_MOCK=1을 넣어주세요.",
         prefs: {},
         results: [],
       });
@@ -119,11 +184,11 @@ app.post("/api/chat", async (req, res) => {
     try {
       prefs = await extractPreferences(userMessage);
     } catch (e) {
-      // LLM 키/연결 문제여도 서버는 죽지 않게
       prefs = { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [] };
     }
 
-    const recs = recommendCafes(prefs, cafes, 5);
+    const recs = recommendCafes(prefs, cafesForChat, 5);
+
     let replyMessage;
     try {
       replyMessage = await generateRecommendationMessage(userMessage, prefs, recs);
@@ -136,6 +201,7 @@ app.post("/api/chat", async (req, res) => {
 
     return res.json({
       ok: true,
+      warning,
       message: replyMessage,
       prefs,
       results: recs.map(pickCafeResultFields),
