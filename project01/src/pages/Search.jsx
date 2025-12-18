@@ -324,6 +324,7 @@ export default function Search() {
             <div className="card-list">
               {results.map((x) => (
                 <button
+                  type="button"
                   key={x.id}
                   className="result-card"
                   onClick={() => navigate(`/cafe/${x.id}`)}
