@@ -2,12 +2,13 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { createMeRouter } from "./me.js";
 import authRouter from "./auth.js";
 
 import { loadCafes } from "./data.js";
 import { recommendCafes } from "./recommend.js";
 import { extractPreferences, generateRecommendationMessage } from "./gpt.js";
-import { createMeRouter } from "./me.js";
+
 
 const PORT = process.env.PORT || 3000;
 
@@ -18,6 +19,7 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 app.use("/auth", authRouter);
+app.use("/api", createMeRouter());
 
 // --------------------
 // 1) 카페 데이터 로드
@@ -27,6 +29,7 @@ const CAFES_CSV = process.env.CAFES_CSV || "dessert_cafes_gemini.csv";
 let cafes = [];
 try {
   cafes = loadCafes(CAFES_CSV);
+  
   console.log(`[server] cafes loaded: ${cafes.length}`);
 } catch (e) {
   console.error("[server] failed to load cafes:", e.message);

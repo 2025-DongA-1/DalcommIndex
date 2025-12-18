@@ -1,3 +1,4 @@
+// src/pages/Mypage.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
@@ -23,7 +24,11 @@ async function apiFetch(path, { method = "GET", body } = {}) {
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || "요청 실패");
+  if (!res.ok) {
+    const err = new Error(data.message || "요청 실패");
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -32,8 +37,8 @@ export default function Mypage() {
 
   const [tab, setTab] = useState("profile");
   const [loading, setLoading] = useState(false);
-  const [globalMsg, setGlobalMsg] = useState({ type: "", text: "" });
 
+  const [globalMsg, setGlobalMsg] = useState({ type: "", text: "" });
   const [user, setUser] = useState(null);
 
   const [profileForm, setProfileForm] = useState({
@@ -46,17 +51,12 @@ export default function Mypage() {
 
   const [favorites, setFavorites] = useState([]);
   const [reviews, setReviews] = useState([]);
-
-  const [settings, setSettings] = useState({
-    marketing: false,
-    profilePublic: true,
-  });
+  const [settings, setSettings] = useState({ marketing: false, profilePublic: true });
 
   const setInfo = (text) => setGlobalMsg({ type: "info", text });
   const setError = (text) => setGlobalMsg({ type: "error", text });
   const clearMsg = () => setGlobalMsg({ type: "", text: "" });
 
-  // 로그인 체크 + 내 정보 로드
   useEffect(() => {
     const token = localStorage.getItem("accessToken");
     if (!token) {
@@ -67,7 +67,6 @@ export default function Mypage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 탭 진입 시 필요한 데이터만 로드
   useEffect(() => {
     if (!user) return;
     if (tab === "favorites") loadFavorites();
@@ -75,27 +74,31 @@ export default function Mypage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, user]);
 
-  const loadMe = async () => {
-    clearMsg();
-    try {
-      setLoading(true);
-      const data = await apiFetch("/api/me");
-      setUser(data.user);
-      setSettings(data.settings);
+const loadMe = async () => {
+  clearMsg();
+  try {
+    setLoading(true);
+    const data = await apiFetch("/api/me");
+    setUser(data.user);
+    setSettings(data.settings);
 
-      setProfileForm((p) => ({
-        ...p,
-        nickname: data.user.nickname || "",
-        region: data.user.region || "광주",
-      }));
-    } catch (e) {
+    setProfileForm((p) => ({
+      ...p,
+      nickname: data.user?.nickname || "",
+      region: data.user?.region || "광주",
+    }));
+  } catch (e) {
+    if (e?.status === 401 || e?.status === 403) {
       localStorage.removeItem("accessToken");
       localStorage.removeItem("user");
       nav("/login");
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
+    setError(e?.message || "마이페이지 정보를 불러오지 못했습니다.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const loadFavorites = async () => {
     clearMsg();
@@ -123,7 +126,6 @@ export default function Mypage() {
     }
   };
 
-  // ====== handlers ======
   const onSaveProfile = async (e) => {
     e.preventDefault();
     setProfileMsg({ type: "", text: "" });
@@ -153,7 +155,6 @@ export default function Mypage() {
         },
       });
 
-      // 닉네임이 토큰에도 들어가므로(선택) 토큰 교체
       if (data.token) localStorage.setItem("accessToken", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
 
@@ -210,7 +211,8 @@ export default function Mypage() {
     const nextRating = Number(nextRatingStr);
 
     if (!nextContent.trim()) return setError("리뷰 내용이 비어있습니다.");
-    if (!Number.isFinite(nextRating) || nextRating < 1 || nextRating > 5) return setError("평점은 1~5 사이여야 합니다.");
+    if (!Number.isFinite(nextRating) || nextRating < 1 || nextRating > 5)
+      return setError("평점은 1~5 사이여야 합니다.");
 
     try {
       setLoading(true);
@@ -279,16 +281,13 @@ export default function Mypage() {
     <div className="app-container">
       <Header />
       <div className="chat-container mypage-container">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 24 }}>마이페이지</h1>
-            <div style={{ marginTop: 6, color: "#666", fontSize: 13 }}>
-              {user.nickname}님 · {user.email} · 선호지역: {user.region || "-"}
-            </div>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 24 }}>마이페이지</h1>
+          <div style={{ marginTop: 6, color: "#666", fontSize: 13 }}>
+            {user.nickname}님 · {user.email} · 선호지역: {user.region || "-"}
           </div>
         </div>
 
-        {/* 탭 */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
           {TABS.map((t) => (
             <button
@@ -305,16 +304,13 @@ export default function Mypage() {
           ))}
         </div>
 
-        {/* 전역 메시지 */}
         {globalMsg.text && (
           <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>
             {globalMsg.text}
           </div>
         )}
 
-        {/* 본문 카드 */}
         <div className="card mypage-card" style={{ marginTop: 14 }}>
-          {/* 회원정보 수정 */}
           {tab === "profile" && (
             <>
               <div className="card-title">회원정보 수정</div>
@@ -331,7 +327,6 @@ export default function Mypage() {
                   <input
                     value={profileForm.nickname}
                     onChange={(e) => setProfileForm((p) => ({ ...p, nickname: e.target.value }))}
-                    placeholder="예: 광진"
                   />
                 </div>
 
@@ -385,7 +380,6 @@ export default function Mypage() {
             </>
           )}
 
-          {/* 즐겨찾기 */}
           {tab === "favorites" && (
             <>
               <div className="card-title">즐겨찾기</div>
@@ -403,19 +397,14 @@ export default function Mypage() {
                           <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region}</div>
                         </div>
 
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button type="button" style={btnGhost} onClick={() => nav("/map")}>
-                            지도에서 보기
-                          </button>
-                          <button
-                            type="button"
-                            style={btnDangerGhost}
-                            disabled={loading}
-                            onClick={() => onRemoveFavorite(cafe.id)}
-                          >
-                            제거
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          style={btnDangerGhost}
+                          disabled={loading}
+                          onClick={() => onRemoveFavorite(cafe.id)}
+                        >
+                          제거
+                        </button>
                       </div>
 
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -430,7 +419,6 @@ export default function Mypage() {
             </>
           )}
 
-          {/* 리뷰 */}
           {tab === "reviews" && (
             <>
               <div className="card-title">리뷰 내역</div>
@@ -470,7 +458,6 @@ export default function Mypage() {
             </>
           )}
 
-          {/* 설정 */}
           {tab === "settings" && (
             <>
               <div className="card-title">설정</div>
@@ -522,7 +509,6 @@ export default function Mypage() {
   );
 }
 
-/** ====== UI helpers ====== */
 function renderStars(n) {
   const full = "★".repeat(n);
   const empty = "☆".repeat(5 - n);
