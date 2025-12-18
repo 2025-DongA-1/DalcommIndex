@@ -1847,3 +1847,230 @@ footer {
   font-size: 28px;   /* 원하시면 더 키워도 됨 */
   font-weight: 600;
 }
+
+
+/* ===== Map 결과를 팝업(드로어)로 ===== */
+
+/* (중요) 지도 페이지가 화면 높이에 딱 맞게: 바깥 스크롤 방지 */
+.app-container { height: 100vh; }
+.main-content-area { height: calc(100vh - 80px); overflow: hidden; } /* 헤더 80px 기준 */
+.map-and-results-wrap { height: 100%; min-height: 0; }
+.map-split-layout { height: 100%; } /* 기존 calc(100% - 56px)보다 안정적 */
+.map-area { height: 100%; }
+
+/* 결과 팝업 오버레이 (사이드바 제외, 지도영역만 덮음) */
+.results-modal-overlay{
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(17, 24, 39, 0.08);
+}
+
+/* 우측 드로어 박스 */
+.results-modal{
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 380px;
+  max-width: min(420px, 46vw);
+
+  background: rgba(255,255,255,0.94);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.14);
+
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.results-modal-header{
+  padding: 12px 14px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.results-modal-header .title{
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.results-modal-header .sub{
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.results-close-btn{
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: rgba(0,0,0,0.06);
+  font-size: 16px;
+  line-height: 1;
+}
+.results-close-btn:hover{ background: rgba(0,0,0,0.1); }
+
+.results-modal-body{
+  padding: 10px;
+  overflow: auto;            /* ✅ 결과 리스트만 스크롤 */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 결과창 다시 열기 버튼 */
+.results-fab{
+  position: absolute;
+  z-index: 35;
+  top: 16px;
+  right: 16px;
+
+  border: 0;
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 999px;
+
+  background: rgba(255,255,255,0.94);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.12);
+  font-size: 13px;
+  font-weight: 700;
+}
+.results-fab:hover{ background: rgba(255,255,255,0.98); }
+
+/* ===== PlacePopup(상세) 모달 ===== */
+.place-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 9999;
+
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+
+  /* 헤더 아래로 내려오게 */
+  padding: 90px 16px 16px;
+}
+
+.place-modal{
+  width: min(560px, 92vw);
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.22);
+  overflow: hidden;
+
+  max-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+}
+
+.place-modal-head{
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.place-modal-title{
+  font-size: 16px;
+  font-weight: 800;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.place-score{
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.place-modal-close{
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 18px;
+}
+.place-modal-close:hover{
+  background: rgba(0,0,0,0.06);
+}
+
+.place-modal-body{
+  padding: 14px 16px;
+  overflow: auto;
+}
+
+.place-meta{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.place-chip{
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #333;
+}
+
+.place-tags{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.place-tag{
+  font-size: 12px;
+  color: #444;
+  background: #fafafa;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+.place-desc{
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #444;
+  white-space: pre-wrap;
+}
+
+.place-modal-actions{
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.place-btn{
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.place-btn.primary{
+  background: #ff6b83;
+  border-color: #ff6b83;
+  color: #fff;
+}
