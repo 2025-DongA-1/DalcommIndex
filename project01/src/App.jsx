@@ -8,6 +8,7 @@ import Chatbot from "./pages/Chat";
 import Login from "./pages/Login";
 import Join from "./pages/Join";
 import Mypage from "./pages/Mypage";
+import RankingPage from "./pages/RankingPage"
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/join" element={<Join />} />
       <Route path="/mypage" element={<Mypage />} />
+      <Route path="/rankingpage" element={<RankingPage />} />
     </Routes>
   );
 }

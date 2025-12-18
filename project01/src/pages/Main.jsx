@@ -208,7 +208,7 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 트렌딩 디저트</h3>
-                <button className="linkish" onClick={() => navigate("/insights?tab=dessert")}>
+                <button className="linkish" onClick={() => navigate("/RankingPage")}>
                   인사이트 보기 →
                 </button>
               </div>
@@ -226,7 +226,7 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 핫한 동네</h3>
-                <button className="linkish" onClick={() => navigate("/insights?tab=region")}>
+                <button className="linkish" onClick={() => navigate("/RankingPage")}>
                   인사이트 보기 →
                 </button>
               </div>
