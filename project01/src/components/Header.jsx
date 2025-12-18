@@ -17,28 +17,17 @@ const Header = ({ showInfoBar = false }) => {
 
   return (
     <>
-      {/* 홈에서만 위 얇은 바 필요하면 showInfoBar={true}로 켜기 */}
-      {showInfoBar && (
-        <div className="top-info-bar">
-          <span>디저트카페 탐색 · β 서비스</span>
-          <a href="#" onClick={(e) => e.preventDefault()}>
-            서비스 소개
-          </a>
-          <a href="#" onClick={(e) => e.preventDefault()}>
-            문의하기
-          </a>
-        </div>
-      )}
+  
 
       <header className="topbar">
         {/* 로고 클릭 시 홈으로 */}
-        <div className="logo" onClick={() => navigate("/")}>
-          <img className="logo-mark" src="/로고.png" alt="로고" />
-          <div>
-            달콤 인덱스
-            <div className="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
-          </div>
-        </div>
+      <div className="logo" onClick={() => navigate("/")}>
+  <img className="logo-mark" src="/로고.png" alt="로고" />
+  <div>
+    <span className="logo-title">달콤 인덱스</span>
+    <div className="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
+  </div>
+</div>
 
         {/* 메뉴 */}
         <div className="top-nav">

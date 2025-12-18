@@ -1841,3 +1841,9 @@ footer {
   .cfd-top-right{ width: 100%; }
   .cfd-action, .cfd-action-primary{ flex: 1; }
 }
+
+.logo-title{
+  font-family: "Jua", sans-serif;
+  font-size: 28px;   /* 원하시면 더 키워도 됨 */
+  font-weight: 600;
+}
