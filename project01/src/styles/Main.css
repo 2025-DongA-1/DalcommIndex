@@ -32,18 +32,20 @@
 
 /* ✅ 히어로(가로로 긴 배경 이미지) */
 .hero-banner{
-  /* 형님이 넣을 배경 이미지 공간: 아래 url만 교체하거나 파일만 덮어씌우면 됩니다 */
-  background-image: url("/hero-banner.jpg"); /* ✅ 여기가 “배경 이미지 넣는 자리” */
+  /* 기존 그대로 */
+  background-image: url("/hero-banner.jpg");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
 
-  /* 높이/여백: 너무 커지지 않게 “기능성 우선” */
   min-height: 220px;
   display: flex;
   align-items: flex-end;
-  padding: 18px 0 20px;
+
+  /* ✅ 하단 여백 제거 */
+  padding: 18px 0 0;
 }
+
 
 .hero-inner{
   width: 100%;
@@ -133,8 +135,9 @@ select:focus,input:focus{
 
 /* 본문 */
 .main-content{
-  padding: 18px 16px 60px;
+  padding: 0 16px 60px; /* ✅ 상단 0 */
 }
+
 
 .section-head{
   display: flex;
@@ -168,7 +171,7 @@ select:focus,input:focus{
 .reco-stack{
   display: grid;
   gap: 14px;
-  margin-top: 10px;
+  margin-top: 0;
 }
 
 .reco-box{
@@ -177,6 +180,10 @@ select:focus,input:focus{
   border-radius: 18px;
   padding: 14px;
   box-shadow: 0 10px 18px rgba(30,20,10,0.06);
+}
+
+.reco-box .section-head{
+  margin: 0 0 10px;  /* ✅ 위쪽 0 */
 }
 
 /* ✅ 지역: 4칸 x 2줄(총 8개) */
@@ -320,4 +327,20 @@ select:focus,input:focus{
 
 @media (max-width: 480px){
   .img-grid{ grid-template-columns: 1fr; }
+}
+
+/* ✅ 히어로 배너 끝 ↔ 본문 시작 간격 0 (겹침 없음) */
+.main-page .hero-banner{
+  margin-bottom: 20px !important;  /* ← 여기 숫자만 조절 */
+  padding-bottom: 0 !important;
+}
+
+.main-page .hero-banner + main.container.main-content{
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+/* ✅ 첫 박스 안쪽 제목 때문에 떠 보이면(박스 내부만) */
+.main-page .reco-box .section-head{
+  margin-top: 0 !important;
 }
