@@ -1102,3 +1102,176 @@ footer {
   min-height: 130px;    /* 카드 높이 */
 }
 
+/* sidebar 수정*/
+
+/* Sidebar filter chip 버튼 기본 스타일 제거 */
+.filter-chip-wrap {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 선택된 칩 표시(굵게/살짝 강조) */
+.filter-chip-wrap.is-selected .filter-chip-inner {
+  font-weight: 700;
+}
+
+/* 선택된 필터 표시 영역 */
+.active-filters-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.active-filter-chip {
+  border: 0;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.active-filter-chip .chip-group {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.active-filter-chip .chip-value {
+  font-weight: 700;
+}
+
+/* 검색 버튼 비활성화 */
+.sidebar-search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 지도 + 결과 리스트 2열 레이아웃 */
+.map-split-layout {
+  display: flex;
+  gap: 14px;
+  height: calc(100% - 56px); /* 상단 검색바 높이에 맞춰 조절 */
+}
+
+.map-area {
+  flex: 1;
+  min-width: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.results-panel {
+  width: 360px;
+  max-width: 40vw;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.results-panel-header {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.results-panel-header .title {
+  font-weight: 800;
+}
+
+.results-panel-header .sub {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.results-empty {
+  padding: 14px 12px;
+  opacity: 0.8;
+  font-size: 14px;
+}
+
+.results-list {
+  padding: 10px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.result-card {
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.result-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.result-card.active {
+  outline: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.result-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.result-card .name {
+  font-weight: 800;
+  font-size: 15px;
+}
+
+.result-card .score {
+  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.result-card .region {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.result-card .address {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.result-card .tags {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.result-card-bottom {
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.result-card-bottom .link {
+  opacity: 0.9;
+  text-decoration: underline;
+}
+
+.result-card-bottom .link.disabled {
+  opacity: 0.5;
+  text-decoration: none;
+}
+

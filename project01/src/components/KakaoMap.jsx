@@ -1,12 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
-  const mapRef = useRef(null);      // 지도 객체 저장
-  const containerRef = useRef(null); // 지도 DOM 저장
-  const markersRef = useRef([]);    // 마커 배열 저장
-  const infoWindowRef = useRef(null); // 인포윈도우 객체 저장
+  const mapRef = useRef(null);
+  const containerRef = useRef(null);
+  const markersRef = useRef([]); // ✅ results 인덱스 그대로 저장(중요)
+  const infoWindowRef = useRef(null);
 
-  // 1. 지도 초기화 (최초 1회)
+  // 1) 지도 초기화 (최초 1회)
   useEffect(() => {
     if (!window.kakao) return;
 
@@ -20,65 +20,72 @@ const KakaoMap = ({ results, focusedIndex, setFocusedIndex }) => {
     infoWindowRef.current = new window.kakao.maps.InfoWindow({ removable: true });
   }, []);
 
-  // 2. 검색 결과(results)가 변경될 때 마커 렌더링
+  // 2) results 변경 시 마커 렌더링
   useEffect(() => {
     if (!mapRef.current) return;
 
     // 기존 마커 제거
-    markersRef.current.forEach(marker => marker.setMap(null));
-    markersRef.current = [];
+    markersRef.current.forEach((m) => m && m.setMap(null));
+    markersRef.current = new Array(results.length).fill(null);
 
-    if (results.length === 0) return;
+    if (!results || results.length === 0) return;
 
     const bounds = new window.kakao.maps.LatLngBounds();
 
     results.forEach((cafe, idx) => {
-      if (!cafe.y || !cafe.x) return;
+      if (!cafe?.y || !cafe?.x) return;
 
       const position = new window.kakao.maps.LatLng(cafe.y, cafe.x);
       const marker = new window.kakao.maps.Marker({
         map: mapRef.current,
-        position: position
+        position,
       });
 
       // 마커 클릭 이벤트
       window.kakao.maps.event.addListener(marker, "click", () => {
+        // ✅ 마커 클릭 시 리스트도 하이라이트
+        setFocusedIndex?.(idx);
+
         const content = `
-          <div style="padding:5px;font-size:12px;">
-            <div style="font-weight:600;margin-bottom:4px;">${cafe.name}</div>
-            <div style="margin-bottom:2px;">${cafe.address || ""}</div>
-            ${cafe.url ? `<a href="${cafe.url}" target="_blank" style="color:#2f80ed;">카카오맵에서 보기</a>` : ""}
+          <div style="padding:6px 8px;font-size:12px;line-height:1.35;">
+            <div style="font-weight:700;margin-bottom:4px;">${cafe.name || ""}</div>
+            <div style="margin-bottom:4px;">${cafe.address || ""}</div>
+            ${
+              cafe.url
+                ? `<a href="${cafe.url}" target="_blank" style="color:#2f80ed;text-decoration:none;">카카오맵에서 보기</a>`
+                : ""
+            }
           </div>
         `;
         infoWindowRef.current.setContent(content);
         infoWindowRef.current.open(mapRef.current, marker);
       });
 
-      markersRef.current.push(marker);
+      // ✅ results 인덱스 그대로 저장
+      markersRef.current[idx] = marker;
       bounds.extend(position);
     });
 
-    // 모든 마커가 보이도록 지도 범위 재설정
     if (!bounds.isEmpty()) {
       mapRef.current.setBounds(bounds);
     }
-  }, [results]);
+  }, [results, setFocusedIndex]);
 
-  // 3. 리스트에서 항목 클릭 시 해당 마커로 이동 및 인포윈도우 열기
+  // 3) 리스트 카드 클릭(focusedIndex) → 지도 이동 + 인포윈도우
   useEffect(() => {
-    if (focusedIndex === null || !markersRef.current[focusedIndex]) return;
+    if (focusedIndex === null || focusedIndex === undefined) return;
 
-    const marker = markersRef.current[focusedIndex];
+    const marker = markersRef.current?.[focusedIndex];
     const map = mapRef.current;
+
+    if (!map || !marker) return;
 
     map.setLevel(4);
     map.panTo(marker.getPosition());
-    
-    // 마커 클릭 이벤트 트리거 (인포윈도우 열기 위함)
-    window.kakao.maps.event.trigger(marker, 'click');
+    window.kakao.maps.event.trigger(marker, "click");
   }, [focusedIndex]);
 
-  return <div id="map" ref={containerRef} style={{ width: '100%', height: '100%' }}></div>;
+  return <div id="map" ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 };
 
 export default KakaoMap;
