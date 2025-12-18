@@ -82,7 +82,7 @@ export default function Main() {
   if (region !== "all") params.set("region", region);
   if (q) params.set("q", q);
 
-  navigate(`/Search?${params.toString()}`);
+  navigate(`/search?${params.toString()}`);
 };
 
   return (
@@ -125,7 +125,7 @@ export default function Main() {
                   key={t}
                   type="button"
                   className="chip"
-                  onClick={() => navigate(`/Search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
+                  onClick={() => navigate(`/search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
                 >
                   #{t}
                 </button>
@@ -142,7 +142,7 @@ export default function Main() {
   <div className="reco-box">
     <div className="section-head">
       <h2>지역별 추천</h2>
-      <button className="linkish" onClick={() => navigate("/regions")}>
+      <button className="linkish" onClick={() => navigate("/search")}>
         지역 전체 보기 →
       </button>
     </div>
@@ -152,7 +152,7 @@ export default function Main() {
         <button
           key={c.id}
           className="img-card"
-          onClick={() => navigate(`/list?region=${encodeURIComponent(c.id)}`)}
+          onClick={() => navigate(`/search?region=${encodeURIComponent(c.id)}`)}
         >
           <div className="thumb">
             <img src={c.img} alt="" />
@@ -180,7 +180,7 @@ export default function Main() {
           className="img-card"
           onClick={() =>
             navigate(
-              `/list?theme=${encodeURIComponent(c.key)}&region=${encodeURIComponent(region)}`
+              `/search?region=${encodeURIComponent(region)}&themes=${encodeURIComponent(c.key)}`
             )
           }
         >
@@ -208,7 +208,7 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 트렌딩 디저트</h3>
-                <button className="linkish" onClick={() => navigate("/RankingPage")}>
+                <button className="linkish" onClick={() => navigate("/rankingPage")}>
                   인사이트 보기 →
                 </button>
               </div>
@@ -226,7 +226,7 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 핫한 동네</h3>
-                <button className="linkish" onClick={() => navigate("/RankingPage")}>
+                <button className="linkish" onClick={() => navigate("/rankingPage")}>
                   인사이트 보기 →
                 </button>
               </div>

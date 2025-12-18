@@ -12,6 +12,16 @@ const TABS = [
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+async function safeReadBody(res) {
+  const text = await res.text().catch(() => "");
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
   const res = await fetch(`${API_BASE}${path}`, {

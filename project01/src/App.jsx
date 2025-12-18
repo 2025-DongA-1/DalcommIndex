@@ -23,8 +23,8 @@ export default function App() {
       <Route path="/mypage" element={<Mypage />} />
       <Route path="/rankingpage" element={<RankingPage />} />
       
-<Route path="/cafe/:id" element={<CafeDetail />} />
-<Route path="/cafe" element={<CafeDetail />} />
+      <Route path="/cafe/:id" element={<CafeDetail />} />
+      <Route path="/cafe" element={<CafeDetail />} />
     </Routes>
   );
 }

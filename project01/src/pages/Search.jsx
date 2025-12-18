@@ -326,7 +326,7 @@ export default function Search() {
                 <button
                   key={x.id}
                   className="result-card"
-                  onClick={() => navigate(`/cafes/${x.id}`)}
+                  onClick={() => navigate(`/cafe/${x.id}`)}
                 >
                   <div className="thumb">
                     <img src={x.thumb} alt="" />
