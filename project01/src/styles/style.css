@@ -1517,3 +1517,21 @@ footer {
   .rkpg-cafe-grid{ grid-template-columns: 1fr; }
 }
 
+/* 로그아웃 버튼 CSS */
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.top-actions .logout {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  cursor: pointer;
+  padding: 10px 14px;
+  border-radius: 12px;
+}
+.top-actions .logout:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

@@ -68,7 +68,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
       taste: [],
       required: [],
     };
-    // prefs.required = Array.from(selected["필수 조건"] || []);
+    prefs.required = Array.from(selected["필수 조건"] || []);
     return prefs;
   };
 

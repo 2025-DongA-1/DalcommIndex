@@ -1,8 +1,20 @@
-import React from 'react'
-import {Link, useNavigate} from 'react-router-dom'
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
-const Header = ({showInfoBar = false}) => {
-    const navigate = useNavigate()
+const Header = ({ showInfoBar = false }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ 초기값을 localStorage에서 바로 읽어서 화면 깜빡임 방지
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return !!localStorage.getItem("accessToken");
+  });
+
+  // ✅ 라우트가 바뀔 때마다 로그인 상태 동기화
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem("accessToken"));
+  }, [location.pathname]);
+
   return (
     <>
       {/* 홈에서만 위 얇은 바 필요하면 showInfoBar={true}로 켜기 */}
@@ -21,7 +33,7 @@ const Header = ({showInfoBar = false}) => {
       <header className="topbar">
         {/* 로고 클릭 시 홈으로 */}
         <div className="logo" onClick={() => navigate("/")}>
-        <img className = "logo-mark" src="/로고.png" alt="로고" />
+          <img className="logo-mark" src="/로고.png" alt="로고" />
           <div>
             달콤 인덱스
             <div className="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
@@ -34,16 +46,43 @@ const Header = ({showInfoBar = false}) => {
           <Link to="/chatbot">챗봇 추천</Link>
 
           <div className="top-actions">
-            <button type="button" onClick={() => navigate("/login")}>
-              로그인
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => navigate("/join")}
-            >
-              회원가입
-            </button>
+            {!isLoggedIn ? (
+              <>
+                <button type="button" onClick={() => navigate("/login")}>
+                  로그인
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => navigate("/join")}
+                >
+                  회원가입
+                </button>
+              </>
+            ) : (
+              <>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => navigate("/mypage")}
+              >
+                마이페이지
+              </button>
+
+              <button
+                type="button"
+                className="logout"
+                onClick={() => {
+                  localStorage.removeItem("accessToken");
+                  localStorage.removeItem("user");
+                  setIsLoggedIn(false); // ✅ 즉시 UI 반영
+                  navigate("/"); // 원하시면 "/login"으로 바꿔도 됩니다.
+                }}
+              >
+                로그아웃
+              </button>
+              </>
+            )}
           </div>
         </div>
       </header>
@@ -51,6 +90,4 @@ const Header = ({showInfoBar = false}) => {
   );
 };
 
-export default Header
-
-
+export default Header;

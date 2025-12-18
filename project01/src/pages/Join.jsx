@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Header from '../components/Header';
 
 export default function Join() {
+  const API_BASE = import.meta.env.VITE_API_BASE || "";
   const nav = useNavigate();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,7 +22,20 @@ export default function Join() {
 
     try {
       setLoading(true);
-      // TODO: API 연동 (예: await api.post("/auth/register", { name, email, password: pw }))
+
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pw, nickname: name,}),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "회원가입 실패");
+
+      // ✅ 가입 즉시 로그인
+      localStorage.setItem("accessToken", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));      
+      
       nav("/login");
     } catch (e2) {
       setErr("회원가입에 실패했습니다. 잠시 후 다시 시도해주세요.");

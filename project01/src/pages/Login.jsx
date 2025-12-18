@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Header from '../components/Header';
 
 export default function Login() {
+  const API_BASE = import.meta.env.VITE_API_BASE || "";
   const nav = useNavigate();
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -18,9 +19,20 @@ export default function Login() {
 
     try {
       setLoading(true);
-      // TODO: API 연동 (예: await api.post("/auth/login", { email, password: pw }))
-      // 성공 시 토큰/유저 저장 -> nav("/map")
-      nav("/map");
+
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pw }),
+      });
+      
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "로그인 실패");
+
+      localStorage.setItem("accessToken", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+  
+      nav("/");
     } catch (e2) {
       setErr("로그인에 실패했습니다. 입력값을 확인해주세요.");
     } finally {

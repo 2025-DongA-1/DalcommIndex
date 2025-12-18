@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Header from '../components/Header';
+import Header from "../components/Header";
 
 const TABS = [
   { key: "profile", label: "회원정보 수정" },
@@ -9,81 +9,119 @@ const TABS = [
   { key: "settings", label: "설정" },
 ];
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const token = localStorage.getItem("accessToken");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || "요청 실패");
+  return data;
+}
+
 export default function Mypage() {
   const nav = useNavigate();
 
-  // ====== (임시) 로그인 사용자 정보 / 추후엔 서버에서 가져오세요 ======
-  const [user, setUser] = useState({
-    id: 1,
-    name: "홍길동",
-    email: "hong@example.com",
-    phone: "",
-    region: "광주",
-  });
-
-  // ====== 탭 ======
   const [tab, setTab] = useState("profile");
+  const [loading, setLoading] = useState(false);
+  const [globalMsg, setGlobalMsg] = useState({ type: "", text: "" });
 
-  // ====== 회원정보 수정 폼 ======
+  const [user, setUser] = useState(null);
+
   const [profileForm, setProfileForm] = useState({
-    name: user.name,
-    phone: user.phone,
-    region: user.region,
+    nickname: "",
+    region: "광주",
     newPassword: "",
     newPasswordConfirm: "",
   });
   const [profileMsg, setProfileMsg] = useState({ type: "", text: "" });
 
-  // ====== 즐겨찾기 (임시 데이터) ======
-  const [favorites, setFavorites] = useState([
-    { id: "cafe_1", name: "카페하루", region: "나주", tags: ["조용한", "디저트", "주차"] },
-    { id: "cafe_2", name: "인스틸커피", region: "나주", tags: ["감성", "케이크"] },
-  ]);
+  const [favorites, setFavorites] = useState([]);
+  const [reviews, setReviews] = useState([]);
 
-  // ====== 리뷰 내역 (임시 데이터) ======
-  const [reviews, setReviews] = useState([
-    { id: "rv_1", cafeId: "cafe_1", cafeName: "카페하루", rating: 5, content: "케이크가 정말 맛있어요.", date: "2025-12-10" },
-    { id: "rv_2", cafeId: "cafe_2", cafeName: "인스틸커피", rating: 4, content: "분위기 좋아서 오래 있었어요.", date: "2025-12-03" },
-  ]);
-
-  // ====== 설정 ======
   const [settings, setSettings] = useState({
     marketing: false,
     profilePublic: true,
   });
 
-  // 공통 UI 상태
-  const [loading, setLoading] = useState(false);
-  const [globalMsg, setGlobalMsg] = useState({ type: "", text: "" });
-
-//   const headerRight = useMemo(() => {
-//     return (
-//       <div style={{ display: "flex", gap: 8 }}>
-//         <button
-//           type="button"
-//           onClick={() => nav("/map")}
-//           style={btnGhost}
-//         >
-//           지도
-//         </button>
-//         <button
-//           type="button"
-//           onClick={() => {
-//             // TODO: 로그아웃 API or 토큰 삭제
-//             localStorage.removeItem("token");
-//             nav("/login");
-//           }}
-//           style={btnDangerGhost}
-//         >
-//           로그아웃
-//         </button>
-//       </div>
-//     );
-//   }, [nav]);
-
   const setInfo = (text) => setGlobalMsg({ type: "info", text });
   const setError = (text) => setGlobalMsg({ type: "error", text });
   const clearMsg = () => setGlobalMsg({ type: "", text: "" });
+
+  // 로그인 체크 + 내 정보 로드
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      nav("/login");
+      return;
+    }
+    loadMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 탭 진입 시 필요한 데이터만 로드
+  useEffect(() => {
+    if (!user) return;
+    if (tab === "favorites") loadFavorites();
+    if (tab === "reviews") loadReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, user]);
+
+  const loadMe = async () => {
+    clearMsg();
+    try {
+      setLoading(true);
+      const data = await apiFetch("/api/me");
+      setUser(data.user);
+      setSettings(data.settings);
+
+      setProfileForm((p) => ({
+        ...p,
+        nickname: data.user.nickname || "",
+        region: data.user.region || "광주",
+      }));
+    } catch (e) {
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
+      nav("/login");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadFavorites = async () => {
+    clearMsg();
+    try {
+      setLoading(true);
+      const data = await apiFetch("/api/me/favorites");
+      setFavorites(data.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadReviews = async () => {
+    clearMsg();
+    try {
+      setLoading(true);
+      const data = await apiFetch("/api/me/reviews");
+      setReviews(data.items || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ====== handlers ======
   const onSaveProfile = async (e) => {
@@ -91,7 +129,9 @@ export default function Mypage() {
     setProfileMsg({ type: "", text: "" });
     clearMsg();
 
-    if (!profileForm.name.trim()) return setProfileMsg({ type: "error", text: "이름(닉네임)을 입력해주세요." });
+    if (!profileForm.nickname.trim()) {
+      return setProfileMsg({ type: "error", text: "닉네임을 입력해주세요." });
+    }
 
     if (profileForm.newPassword || profileForm.newPasswordConfirm) {
       if (profileForm.newPassword.length < 8) {
@@ -104,27 +144,24 @@ export default function Mypage() {
 
     try {
       setLoading(true);
+      const data = await apiFetch("/api/me", {
+        method: "PUT",
+        body: {
+          nickname: profileForm.nickname,
+          region: profileForm.region,
+          newPassword: profileForm.newPassword || "",
+        },
+      });
 
-      // TODO: 서버 연동 예시
-      // await api.put("/users/me", { name, phone, region, newPassword })
-      // 성공하면 user state 갱신
+      // 닉네임이 토큰에도 들어가므로(선택) 토큰 교체
+      if (data.token) localStorage.setItem("accessToken", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
 
-      setUser((prev) => ({
-        ...prev,
-        name: profileForm.name,
-        phone: profileForm.phone,
-        region: profileForm.region,
-      }));
-
-      setProfileForm((prev) => ({
-        ...prev,
-        newPassword: "",
-        newPasswordConfirm: "",
-      }));
-
+      setUser(data.user);
+      setProfileForm((p) => ({ ...p, newPassword: "", newPasswordConfirm: "" }));
       setProfileMsg({ type: "info", text: "회원정보가 저장되었습니다." });
-    } catch (err) {
-      setProfileMsg({ type: "error", text: "저장에 실패했습니다. 잠시 후 다시 시도해주세요." });
+    } catch (e2) {
+      setProfileMsg({ type: "error", text: e2.message || "저장 실패" });
     } finally {
       setLoading(false);
     }
@@ -134,12 +171,11 @@ export default function Mypage() {
     clearMsg();
     try {
       setLoading(true);
-
-      // TODO: await api.delete(`/favorites/${id}`)
+      await apiFetch(`/api/me/favorites/${id}`, { method: "DELETE" });
       setFavorites((prev) => prev.filter((x) => x.id !== id));
       setInfo("즐겨찾기에서 제거했습니다.");
     } catch (e) {
-      setError("즐겨찾기 제거에 실패했습니다.");
+      setError(e.message || "즐겨찾기 제거 실패");
     } finally {
       setLoading(false);
     }
@@ -151,11 +187,11 @@ export default function Mypage() {
 
     try {
       setLoading(true);
-      // TODO: await api.delete(`/reviews/${id}`)
+      await apiFetch(`/api/me/reviews/${id}`, { method: "DELETE" });
       setReviews((prev) => prev.filter((x) => x.id !== id));
       setInfo("리뷰를 삭제했습니다.");
     } catch (e) {
-      setError("리뷰 삭제에 실패했습니다.");
+      setError(e.message || "리뷰 삭제 실패");
     } finally {
       setLoading(false);
     }
@@ -178,13 +214,17 @@ export default function Mypage() {
 
     try {
       setLoading(true);
-      // TODO: await api.put(`/reviews/${id}`, { content: nextContent, rating: nextRating })
+      await apiFetch(`/api/me/reviews/${id}`, {
+        method: "PUT",
+        body: { content: nextContent, rating: nextRating },
+      });
+
       setReviews((prev) =>
         prev.map((r) => (r.id === id ? { ...r, content: nextContent, rating: nextRating } : r))
       );
       setInfo("리뷰가 수정되었습니다.");
     } catch (e) {
-      setError("리뷰 수정에 실패했습니다.");
+      setError(e.message || "리뷰 수정 실패");
     } finally {
       setLoading(false);
     }
@@ -194,10 +234,13 @@ export default function Mypage() {
     clearMsg();
     try {
       setLoading(true);
-      // TODO: await api.put("/users/me/settings", settings)
+      await apiFetch("/api/me/settings", {
+        method: "PUT",
+        body: { marketing: settings.marketing, profilePublic: settings.profilePublic },
+      });
       setInfo("설정이 저장되었습니다.");
     } catch (e) {
-      setError("설정 저장에 실패했습니다.");
+      setError(e.message || "설정 저장 실패");
     } finally {
       setLoading(false);
     }
@@ -210,281 +253,271 @@ export default function Mypage() {
 
     try {
       setLoading(true);
-      // TODO: await api.delete("/users/me")
-      localStorage.removeItem("token");
+      await apiFetch("/api/me", { method: "DELETE" });
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("user");
       nav("/login");
     } catch (e) {
-      setError("탈퇴 처리에 실패했습니다.");
+      setError(e.message || "탈퇴 처리 실패");
     } finally {
       setLoading(false);
     }
   };
 
+  if (!user) {
+    return (
+      <div className="app-container">
+        <Header />
+        <div className="chat-container mypage-container">
+          <div className="card mypage-card">불러오는 중...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-     <div className="app-container">
+    <div className="app-container">
       <Header />
-    <div className="chat-container mypage-container">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24 }}>마이페이지</h1>
-          <div style={{ marginTop: 6, color: "#666", fontSize: 13 }}>
-            {user.name}님 · {user.email} · 선호지역: {user.region}
+      <div className="chat-container mypage-container">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 24 }}>마이페이지</h1>
+            <div style={{ marginTop: 6, color: "#666", fontSize: 13 }}>
+              {user.nickname}님 · {user.email} · 선호지역: {user.region || "-"}
+            </div>
           </div>
         </div>
-        
-      </div>
 
-      {/* 탭 */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => {
-              clearMsg();
-              setTab(t.key);
-            }}
-            style={tabBtn(tab === t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* 전역 메시지 */}
-      {globalMsg.text && (
-        <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>
-          {globalMsg.text}
+        {/* 탭 */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                clearMsg();
+                setTab(t.key);
+              }}
+              style={tabBtn(tab === t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      {/* 본문 카드 */}
-      <div className="card mypage-card" style={{ marginTop: 14 }}>
-        {/* 회원정보 수정 */}
-        {tab === "profile" && (
-          <>
-            <div className="card-title">회원정보 수정</div>
-            <div className="card-subtitle">닉네임/연락처/선호지역, 비밀번호 변경을 관리합니다.</div>
+        {/* 전역 메시지 */}
+        {globalMsg.text && (
+          <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>
+            {globalMsg.text}
+          </div>
+        )}
 
-            <form onSubmit={onSaveProfile}>
-              <div className="form-group">
-                <label>이메일</label>
-                <input value={user.email} readOnly />
-                <div className="helper">이메일은 변경할 수 없도록 처리하는 것을 권장합니다.</div>
-              </div>
+        {/* 본문 카드 */}
+        <div className="card mypage-card" style={{ marginTop: 14 }}>
+          {/* 회원정보 수정 */}
+          {tab === "profile" && (
+            <>
+              <div className="card-title">회원정보 수정</div>
+              <div className="card-subtitle">닉네임/선호지역, 비밀번호 변경을 관리합니다.</div>
 
-              <div className="form-group">
-                <label>이름/닉네임</label>
-                <input
-                  value={profileForm.name}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="예: 광진"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>연락처</label>
-                <input
-                  value={profileForm.phone}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, phone: e.target.value }))}
-                  placeholder="예: 010-1234-5678"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>선호 지역</label>
-                <select
-                  value={profileForm.region}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, region: e.target.value }))}
-                  style={selectStyle}
-                >
-                  <option value="광주">광주</option>
-                  <option value="나주">나주</option>
-                  <option value="담양">담양</option>
-                  <option value="장성">장성</option>
-                  <option value="화순">화순</option>
-                </select>
-              </div>
-
-              <div style={{ height: 10 }} />
-
-              <div className="form-group">
-                <label>새 비밀번호</label>
-                <input
-                  type="password"
-                  value={profileForm.newPassword}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, newPassword: e.target.value }))}
-                  placeholder="변경 시에만 입력"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>새 비밀번호 확인</label>
-                <input
-                  type="password"
-                  value={profileForm.newPasswordConfirm}
-                  onChange={(e) => setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))}
-                  placeholder="변경 시에만 입력"
-                />
-              </div>
-
-              {profileMsg.text && (
-                <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>
-                  {profileMsg.text}
+              <form onSubmit={onSaveProfile}>
+                <div className="form-group">
+                  <label>이메일</label>
+                  <input value={user.email} readOnly />
                 </div>
-              )}
 
-              <button className="auth-submit-btn" disabled={loading}>
-                {loading ? "저장 중..." : "저장하기"}
-              </button>
-            </form>
-          </>
-        )}
+                <div className="form-group">
+                  <label>닉네임</label>
+                  <input
+                    value={profileForm.nickname}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, nickname: e.target.value }))}
+                    placeholder="예: 광진"
+                  />
+                </div>
 
-        {/* 즐겨찾기 */}
-        {tab === "favorites" && (
-          <>
-            <div className="card-title">즐겨찾기</div>
-            <div className="card-subtitle">저장해둔 카페 목록을 확인하고 관리합니다.</div>
+                <div className="form-group">
+                  <label>선호 지역</label>
+                  <select
+                    value={profileForm.region}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, region: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="광주">광주</option>
+                    <option value="나주">나주</option>
+                    <option value="담양">담양</option>
+                    <option value="장성">장성</option>
+                    <option value="화순">화순</option>
+                  </select>
+                </div>
 
-            {favorites.length === 0 ? (
-              <div style={{ color: "#777", fontSize: 13 }}>즐겨찾기한 카페가 없습니다.</div>
-            ) : (
-              <div className="mypage-fav-list">
-                {favorites.map((cafe) => (
-                  <div key={cafe.id} className="mypage-fav-card">
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{cafe.name}</div>
-                        <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region}</div>
-                      </div>
+                <div style={{ height: 10 }} />
 
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <button
-                          type="button"
-                          style={btnGhost}
-                          onClick={() => {
-                            // TODO: 카페 상세/지도 이동 로직에 맞게 수정
-                            nav("/map");
-                          }}
-                        >
-                          지도에서 보기
-                        </button>
-                        <button
-                          type="button"
-                          style={btnDangerGhost}
-                          disabled={loading}
-                          onClick={() => onRemoveFavorite(cafe.id)}
-                        >
-                          제거
-                        </button>
-                      </div>
-                    </div>
+                <div className="form-group">
+                  <label>새 비밀번호</label>
+                  <input
+                    type="password"
+                    value={profileForm.newPassword}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, newPassword: e.target.value }))}
+                    placeholder="변경 시에만 입력"
+                  />
+                </div>
 
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                      {cafe.tags.map((t) => (
-                        <span key={t} className="chip">{t}</span>
-                      ))}
-                    </div>
+                <div className="form-group">
+                  <label>새 비밀번호 확인</label>
+                  <input
+                    type="password"
+                    value={profileForm.newPasswordConfirm}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))}
+                    placeholder="변경 시에만 입력"
+                  />
+                </div>
+
+                {profileMsg.text && (
+                  <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>
+                    {profileMsg.text}
                   </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                )}
 
-        {/* 리뷰 내역 */}
-        {tab === "reviews" && (
-          <>
-            <div className="card-title">리뷰 내역</div>
-            <div className="card-subtitle">작성한 리뷰를 확인하고 수정/삭제할 수 있습니다.</div>
+                <button className="auth-submit-btn" disabled={loading}>
+                  {loading ? "저장 중..." : "저장하기"}
+                </button>
+              </form>
+            </>
+          )}
 
-            {reviews.length === 0 ? (
-              <div style={{ color: "#777", fontSize: 13 }}>작성한 리뷰가 없습니다.</div>
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {reviews.map((r) => (
-                  <div key={r.id} style={itemCard}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{r.cafeName}</div>
-                        <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                          평점: {renderStars(r.rating)} · {r.date}
+          {/* 즐겨찾기 */}
+          {tab === "favorites" && (
+            <>
+              <div className="card-title">즐겨찾기</div>
+              <div className="card-subtitle">저장해둔 카페 목록을 확인하고 관리합니다.</div>
+
+              {favorites.length === 0 ? (
+                <div style={{ color: "#777", fontSize: 13 }}>즐겨찾기한 카페가 없습니다.</div>
+              ) : (
+                <div className="mypage-fav-list">
+                  {favorites.map((cafe) => (
+                    <div key={cafe.id} className="mypage-fav-card">
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{cafe.name}</div>
+                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region}</div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button type="button" style={btnGhost} onClick={() => nav("/map")}>
+                            지도에서 보기
+                          </button>
+                          <button
+                            type="button"
+                            style={btnDangerGhost}
+                            disabled={loading}
+                            onClick={() => onRemoveFavorite(cafe.id)}
+                          >
+                            제거
+                          </button>
                         </div>
                       </div>
 
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <button type="button" style={btnGhost} disabled={loading} onClick={() => onEditReview(r.id)}>
-                          수정
-                        </button>
-                        <button type="button" style={btnDangerGhost} disabled={loading} onClick={() => onDeleteReview(r.id)}>
-                          삭제
-                        </button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                        {(cafe.tags || []).map((t) => (
+                          <span key={t} className="chip">{t}</span>
+                        ))}
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-                    <div style={{ marginTop: 8, fontSize: 13, color: "#333", lineHeight: 1.5 }}>
-                      {r.content}
+          {/* 리뷰 */}
+          {tab === "reviews" && (
+            <>
+              <div className="card-title">리뷰 내역</div>
+              <div className="card-subtitle">작성한 리뷰를 확인하고 수정/삭제할 수 있습니다.</div>
+
+              {reviews.length === 0 ? (
+                <div style={{ color: "#777", fontSize: 13 }}>작성한 리뷰가 없습니다.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {reviews.map((r) => (
+                    <div key={r.id} style={itemCard}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{r.cafeName}</div>
+                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                            평점: {renderStars(r.rating)} · {String(r.created_at || "").slice(0, 10)}
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button type="button" style={btnGhost} disabled={loading} onClick={() => onEditReview(r.id)}>
+                            수정
+                          </button>
+                          <button type="button" style={btnDangerGhost} disabled={loading} onClick={() => onDeleteReview(r.id)}>
+                            삭제
+                          </button>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 8, fontSize: 13, color: "#333", lineHeight: 1.5 }}>
+                        {r.content}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+                  ))}
+                </div>
+              )}
+            </>
+          )}
 
-        {/* 설정 */}
-        {tab === "settings" && (
-          <>
-            <div className="card-title">설정</div>
-            <div className="card-subtitle">알림/공개 범위/탈퇴 등을 관리합니다.</div>
+          {/* 설정 */}
+          {tab === "settings" && (
+            <>
+              <div className="card-title">설정</div>
+              <div className="card-subtitle">알림/공개 범위/탈퇴 등을 관리합니다.</div>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              <div style={itemCard}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>마케팅 수신</div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>이벤트/소식 알림을 받습니다.</div>
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={itemCard}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>마케팅 수신</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>이벤트/소식 알림을 받습니다.</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.marketing}
+                      onChange={(e) => setSettings((s) => ({ ...s, marketing: e.target.checked }))}
+                    />
                   </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.marketing}
-                    onChange={(e) => setSettings((s) => ({ ...s, marketing: e.target.checked }))}
-                  />
+                </div>
+
+                <div style={itemCard}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 700 }}>프로필 공개</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>리뷰에 닉네임 표시 여부</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={settings.profilePublic}
+                      onChange={(e) => setSettings((s) => ({ ...s, profilePublic: e.target.checked }))}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" style={btnPrimary} disabled={loading} onClick={onSaveSettings}>
+                    {loading ? "저장 중..." : "설정 저장"}
+                  </button>
+                  <button type="button" style={btnDanger} disabled={loading} onClick={onDeleteAccount}>
+                    회원 탈퇴
+                  </button>
                 </div>
               </div>
-
-              <div style={itemCard}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>프로필 공개</div>
-                    <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>리뷰에 닉네임 표시 여부</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={settings.profilePublic}
-                    onChange={(e) => setSettings((s) => ({ ...s, profilePublic: e.target.checked }))}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button type="button" style={btnPrimary} disabled={loading} onClick={onSaveSettings}>
-                  {loading ? "저장 중..." : "설정 저장"}
-                </button>
-                <button type="button" style={btnDanger} disabled={loading} onClick={onDeleteAccount}>
-                  회원 탈퇴
-                </button>
-              </div>
-
-              <div style={{ fontSize: 12, color: "#777", lineHeight: 1.5 }}>
-                * 실제 서비스에서는 “회원 탈퇴”는 보통 2차 확인(비밀번호 재확인/이메일 인증) 절차를 추가하는 것을 권장합니다.
-              </div>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
     </div>
   );
 }
