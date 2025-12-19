@@ -10,6 +10,66 @@ const VIEW_KEY = "dalcomm_map_view_v1";
 const KEEP_KEY = "dalcomm_keep_map_state_v1";
 
 
+
+// ✅ 지역 표기(사이드바/상단검색) -> 데이터/서버 매칭용(여러 표기) 확장
+const REGION_ALIASES = {
+  "광주 전체": ["광주", "광주광역시", "gwangju"],
+  "광주 동구": ["광주 동구", "광주광역시 동구", "동구", "dong-gu"],
+  "광주 남구": ["광주 남구", "광주광역시 남구", "남구", "nam-gu"],
+  "광주 북구": ["광주 북구", "광주광역시 북구", "북구", "buk-gu"],
+  "광주 서구": ["광주 서구", "광주광역시 서구", "서구", "seo-gu"],
+  "광주 광산구": ["광주 광산구", "광주광역시 광산구", "광산구", "gwangsan-gu"],
+  나주: ["나주", "naju"],
+  담양: ["담양", "damyang"],
+  화순: ["화순", "hwasun"],
+};
+
+const REGION_TOKEN_TO_KEY = {
+  // 광주(전체)
+  "광주전체": "광주 전체",
+  "광주 전체": "광주 전체",
+  "광주광역시": "광주 전체",
+  "광주": "광주 전체",
+
+  // 광주 구(구 단독 입력도 지원)
+  "광주광역시 동구": "광주 동구",
+  "광주광역시 남구": "광주 남구",
+  "광주광역시 북구": "광주 북구",
+  "광주광역시 서구": "광주 서구",
+  "광주광역시 광산구": "광주 광산구",
+
+  "광주 동구": "광주 동구",
+  "광주 남구": "광주 남구",
+  "광주 북구": "광주 북구",
+  "광주 서구": "광주 서구",
+  "광주 광산구": "광주 광산구",
+
+  동구: "광주 동구",
+  남구: "광주 남구",
+  북구: "광주 북구",
+  서구: "광주 서구",
+  광산구: "광주 광산구",
+
+  // 기타 지역
+  나주: "나주",
+  담양: "담양",
+  화순: "화순",
+};
+
+const REGION_TOKENS = Object.keys(REGION_TOKEN_TO_KEY).sort((a, b) => b.length - a.length);
+
+function expandRegionTokens(tokens) {
+  const out = [];
+  for (const t of tokens) {
+    const key = REGION_TOKEN_TO_KEY[t] || t;
+    const aliases = REGION_ALIASES[key] || [key];
+    for (const v of aliases) {
+      if (!out.includes(v)) out.push(v);
+    }
+  }
+  return out;
+}
+
 function safeParse(json) {
   try {
     return JSON.parse(json);
@@ -76,6 +136,10 @@ export default function Map() {
 
   // ✅ “복구 중 저장 방지” 플래그
   const restoringRef = useRef(true);
+  // ✅ 언마운트 직전에도 최신 state를 저장할 수 있게 ref로 보관
+const latestRef = useRef(null);
+latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults };
+
 
   const API_BASE = import.meta.env.VITE_API_BASE || "";
   const filterUrl = API_BASE ? `${API_BASE}/filter` : "/filter";
@@ -152,10 +216,23 @@ export default function Map() {
     return () => {
       // ✅ 상세페이지로 이동한 경우(플래그가 있으면) 유지
       const keep = sessionStorage.getItem(KEEP_KEY) === "1";
-      if (keep) {
-        sessionStorage.removeItem(KEEP_KEY); // 1회성 플래그라서 바로 제거
-        return;
-      }
+         if (keep) {
+      // ✅ 상세페이지로 이동하는 순간, 최신 검색결과/상태를 한번 더 강제 저장
+      try {
+        const s = latestRef.current || {};
+        const payload = {
+          isSidebarOpen: s.isSidebarOpen,
+          hasSearched: s.hasSearched,
+          topQuery: s.topQuery,
+          focusedIndex: s.focusedIndex,
+          searchResults: (s.searchResults || []).map(compactCafe),
+        };
+        sessionStorage.setItem(STORE_KEY, JSON.stringify(payload));
+      } catch (e) {}
+
+      sessionStorage.removeItem(KEEP_KEY); // 1회성 플래그 제거
+      return;
+    }
 
       // ✅ 그 외(메인으로 이동 등) -> 지도페이지 초기화
       sessionStorage.removeItem(STORE_KEY);
@@ -195,36 +272,41 @@ export default function Map() {
     }
   };
 
-  const handleTopSearch = async () => {
-    const q = (topQuery || "").trim();
-    if (!q) return;
+const handleTopSearch = async () => {
+  const q = (topQuery || "").trim();
+  if (!q) return;
 
-    const regionWords = ["광주광역시", "광주", "나주", "담양", "장성", "화순"];
-    const regions = regionWords.filter((r) => q.includes(r));
+  // ✅ "지역(구 포함) + 나머지 키워드"를 분리
+  let keyword = q;
+  const regionTokensFound = [];
 
-    let keyword = q;
-    regions.forEach((r) => {
-      keyword = keyword.replaceAll(r, " ");
-    });
-    keyword = keyword.replace(/\s+/g, " ").trim();
-
-    let menuKeyword = "";
-    if (keyword) {
-      const tokens = keyword.split(/\s+/).filter(Boolean);
-      menuKeyword = tokens.sort((a, b) => b.length - a.length)[0] || keyword;
+  for (const token of REGION_TOKENS) {
+    if (keyword.includes(token)) {
+      regionTokensFound.push(token);
+      keyword = keyword.replaceAll(token, " ");
     }
+  }
 
-    const prefs = {
-      region: regions.length ? regions : [],
-      atmosphere: [],
-      purpose: [],
-      taste: [],
-      required: [],
-      menu: menuKeyword ? [menuKeyword] : [],
-    };
+  keyword = keyword.replace(/\s+/g, " ").trim();
 
-    await handleSearch(prefs);
+  // ✅ 남은 키워드 중 가장 "긴 토큰"을 메뉴/가게명 키워드로 사용
+  let menuKeyword = "";
+  if (keyword) {
+    const tokens = keyword.split(/\s+/).filter(Boolean);
+    menuKeyword = tokens.sort((a, b) => b.length - a.length)[0] || keyword;
+  }
+
+  const prefs = {
+    region: expandRegionTokens(regionTokensFound),
+    atmosphere: [],
+    purpose: [],
+    taste: [],
+    required: [],
+    menu: menuKeyword ? [menuKeyword] : [],
   };
+
+  await handleSearch(prefs);
+};
 
   const selectedId =
     popupPlace?.id ??

@@ -700,10 +700,15 @@ input:focus {
 
 /* 초기화 버튼 */
 .filter-reset-btn {
-  color: #999999;
-  font-size: 12px;
-  padding: 2px 6px 3px 6px;
-  cursor: pointer;
+    padding: 2px 8px 3px 8px;
+    border-radius: 999px;
+    border: 1px solid #ff4b82; /* 메인 컬러(핑크) */
+    background: white;
+    color: #ff4b82; /* 메인 컬러(핑크) */
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
 }
 
 /* 닫기 버튼 그룹 */
@@ -717,9 +722,9 @@ input:focus {
 .close-filter-btn {
     padding: 2px 8px 3px 8px;
     border-radius: 999px;
-    border: 1px solid #FF9F68; /* 오렌지색 테두리 */
+    border: 1px solid #ff4b82; /* 메인 컬러(핑크) */
     background: white;
-    color: #FF9F68; /* 오렌지색 텍스트 */
+    color: #ff4b82; /* 메인 컬러(핑크) */
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
@@ -727,7 +732,7 @@ input:focus {
 }
 
 .close-filter-btn:hover {
-    background: #FFF7F2;
+    background: #ffeff5;
 }
 
 
@@ -735,7 +740,7 @@ input:focus {
   padding: 9px 12px 8px 12px;
   background: white;
   border-radius: 999px;
-  outline: 1px solid #F0D3C8;
+  outline: 1px solid #ffd1df;
   outline-offset: -1px;
   cursor: pointer;
   white-space: nowrap;
@@ -785,8 +790,8 @@ input:focus {
   position: absolute;
   bottom: 16px; 
   left: 16px;
-  background: #FF9F68; 
-  box-shadow: 0px 4px 12px rgba(255, 159, 104, 0.55);
+  background: #ff4b82; 
+  box-shadow: 0px 4px 12px rgba(255, 75, 130, 0.45);
   border-radius: 999px;
   outline: 1px solid transparent; 
   outline-offset: -1px;
@@ -848,9 +853,14 @@ input:focus {
 
 .map-search-action-btn {
   padding: 7px 14px 8px 14px;
-  background: #FF9F68;
+  background: #ff4b82;
   border-radius: 999px;
   cursor: pointer;
+  border: none;
+}
+
+.map-search-action-btn:hover {
+  filter: brightness(0.97);
 }
 
 .map-search-action-btn .text {
@@ -1115,8 +1125,13 @@ footer {
 /* 선택된 칩 표시(굵게/살짝 강조) */
 .filter-chip-wrap.is-selected .filter-chip-inner {
   font-weight: 700;
+  background: #ffeff5;
+  outline: 1px solid #ff4b82;
 }
 
+.filter-chip-wrap.is-selected .filter-chip-text {
+  color: #ff4b82;
+}
 /* 선택된 필터 표시 영역 */
 .active-filters-chips {
   display: flex;
@@ -1125,16 +1140,23 @@ footer {
 }
 
 .active-filter-chip {
-  border: 0;
   cursor: pointer;
   padding: 6px 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: #ffeff5;
+  border: 1px solid #ffd1df;
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
+.active-filter-chip:hover {
+  filter: brightness(0.98);
+}
+
+.active-filter-chip .chip-x {
+  color: #ff4b82;
+}
 .active-filter-chip .chip-group {
   opacity: 0.7;
   font-size: 12px;
@@ -2436,3 +2458,41 @@ footer {
 
 .place-modal-backdrop { pointer-events: none; }
 .place-modal-backdrop .place-modal { pointer-events: auto; }
+
+/* ====== 지역(광주) 펼침 UI ====== */
+.region-toggle .filter-chip-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.region-caret {
+  font-size: 12px;
+  opacity: 0.75;
+  transform: translateY(-1px) rotate(0deg);
+  transition: transform 0.15s ease;
+}
+
+.region-caret.open {
+  transform: translateY(-1px) rotate(180deg);
+}
+
+/* 광주 버튼이 펼쳐진 상태 표시 */
+.region-toggle.is-open .filter-chip-inner {
+  background: #ffeff5;
+  outline: 1px solid #ff4b82;
+}
+
+.region-sub-options {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 75, 130, 0.18);
+}
+
+.region-sub-chip .filter-chip-inner {
+  padding: 8px 11px 7px 11px;
+}
