@@ -12,8 +12,12 @@ build_cafe_db_enriched_v5.py
 
 import re, json, hashlib, argparse
 import pandas as pd
+import csv
 from collections import Counter, defaultdict
 from kiwipiepy import Kiwi
+
+MYSQL_NULL = r"\N"  # LOAD DATA INFILE에서 NULL로 인식하는 표준 표기
+
 
 # =========================
 # 0) 기본 입력 파일(3개) - 필요 시 CLI로 변경 가능
@@ -32,6 +36,34 @@ DEFAULT_OUT_GLOBAL = "global_token_freq_v2.csv"
 # (추가) 가격표 출력
 DEFAULT_OUT_PRICE_ITEMS   = "cafe_price_items_v1.csv"      # 카페별 가격 항목(가능하면 메뉴 추정 포함)
 DEFAULT_OUT_PRICE_SUMMARY = "cafe_price_summary_v1.csv"    # 카페별 가격 요약(최소/최대/중앙값/목록)
+
+# =========================
+# (추가) MySQL 적재용 컬럼명 매핑
+# =========================
+KOR_TO_SQL_COL = {
+    "카페id": "cafe_id",
+    "카페이름": "cafe_name",
+    "주소": "address",
+    "지역(구단위)": "district",
+    "좌표(lat)": "lat",
+    "좌표(lng)": "lng",
+    "지도링크": "map_url",
+    "카페이미지url": "image_url",
+    "분위기": "atmosphere_tags",
+    "맛": "taste_tags",
+    "동반자": "companion_tags",
+    "메뉴": "menu_tags",
+    "주요메뉴": "main_menus",
+    "주차여부": "parking",
+    "블로그수": "blog_count",
+    "추천점수(0-100)": "reco_score",
+    "추천유형": "reco_type",
+    "추천태그": "reco_tags",
+    "추천문구": "reco_message",
+    "가격요약": "price_summary",
+    "가격목록": "price_list_json",
+    "키워드TOP40": "top40_json",
+}
 
 # =========================
 # 2) 이모지 제거 + 텍스트 정리/정규화
@@ -682,6 +714,35 @@ def normalize_for_db(df: pd.DataFrame):
     df = df.replace({"": None, "nan": None, "NaN": None})
     return df
 
+def df_mysql_ready(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    MySQL LOAD DATA INFILE 친화적으로:
+    - None/NaN/빈문자열을 \\N 으로 통일
+    - 숫자형은 숫자 유지(가능한 범위에서)
+    """
+    out = df.copy().astype(object)
+
+    # pandas NaN/None 통일 후 \N 치환
+    out = out.where(pd.notnull(out), None)
+    out = out.replace({None: MYSQL_NULL, "": MYSQL_NULL, "nan": MYSQL_NULL, "NaN": MYSQL_NULL})
+
+    return out
+
+def export_mysql_csv(df: pd.DataFrame, path: str):
+    """
+    - BOM 없이 UTF-8
+    - \\N 이 따옴표로 감싸지지 않도록 QUOTE_MINIMAL
+    - MySQL ESCAPED BY '\\\\' 와 맞춤
+    """
+    df.to_csv(
+        path,
+        index=False,
+        encoding="utf-8",          # ✅ utf-8-sig(BOM) 금지
+        lineterminator="\n",
+        quoting=csv.QUOTE_MINIMAL,
+        escapechar="\\"
+    )
+
 # =========================
 # 6) 카카오 좌표로 보충(이름+주소 기반 매칭)
 # =========================
@@ -906,6 +967,19 @@ def main(args):
     else:
         summ = pd.DataFrame(columns=["카페id","카페이름","가격목록","가격종류수","최소가","최대가","대표가(중앙값)"])
 
+    # ✅ (추가) MySQL 적재용 컬럼명으로 변환한 DF 생성
+    db_mysql = db_df.rename(columns=KOR_TO_SQL_COL)
+
+    # (권장) 숫자형으로 캐스팅 (MySQL에서 DECIMAL/INT로 넣을 때 유리)
+    db_mysql["lat"] = pd.to_numeric(db_mysql["lat"], errors="coerce")
+    db_mysql["lng"] = pd.to_numeric(db_mysql["lng"], errors="coerce")
+    db_mysql["blog_count"] = pd.to_numeric(db_mysql["blog_count"], errors="coerce")
+    db_mysql["reco_score"] = pd.to_numeric(db_mysql["reco_score"], errors="coerce")
+
+    db_mysql = df_mysql_ready(db_mysql)
+    out_master_mysql = args.out_master.replace(".csv", "_mysql.csv")
+    export_mysql_csv(db_mysql, out_master_mysql)
+
     db_df.to_csv(args.out_master, index=False, encoding="utf-8-sig")
     freq_df.to_csv(args.out_freq, index=False, encoding="utf-8-sig")
     global_df.to_csv(args.out_global, index=False, encoding="utf-8-sig")
@@ -918,6 +992,7 @@ def main(args):
     print(" -", args.out_global)
     print(" -", args.out_price_items)
     print(" -", args.out_price_summary)
+    print(" -", out_master_mysql)
 
 def parse_args():
     p = argparse.ArgumentParser()

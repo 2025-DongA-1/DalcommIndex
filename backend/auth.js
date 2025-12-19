@@ -2,6 +2,7 @@
 import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { pool } from "./db.js";
 
 const router = express.Router();
@@ -15,6 +16,10 @@ function signToken(user) {
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );
+}
+
+function sha256(text) {
+  return crypto.createHash("sha256").update(String(text)).digest("hex");
 }
 
 function authRequired(req, res, next) {
@@ -94,6 +99,46 @@ router.post("/login", async (req, res) => {
     return res.status(500).json({ message: "로그인 실패" });
   }
 });
+
+/** ✅ (간단버전) 이메일 + 닉네임으로 비밀번호 재설정 */
+router.post("/password/reset-simple", async (req, res) => {
+  try {
+    const { email, nickname, newPassword } = req.body || {};
+
+    if (!email?.trim() || !nickname?.trim() || !newPassword?.trim()) {
+      return res.status(400).json({ message: "email/nickname/newPassword는 필수입니다." });
+    }
+
+    const key = email.trim().toLowerCase();
+    const nick = nickname.trim();
+
+    const [rows] = await pool.query(
+      `SELECT user_id FROM users WHERE email = ? AND nickname = ? LIMIT 1`,
+      [key, nick]
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({ message: "이메일/닉네임 정보가 일치하지 않습니다." });
+    }
+
+    if (newPassword.trim().length < 4) {
+      return res.status(400).json({ message: "비밀번호는 4자 이상으로 입력해주세요." });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword.trim(), 10);
+
+    await pool.query(
+      `UPDATE users SET password_hash = ? WHERE user_id = ?`,
+      [passwordHash, rows[0].user_id]
+    );
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[auth/password/reset-simple]", e);
+    return res.status(500).json({ message: "비밀번호 재설정 실패" });
+  }
+});
+
 
 /** 토큰 확인용 */
 router.get("/me", authRequired, (req, res) => res.json({ user: req.user }));
