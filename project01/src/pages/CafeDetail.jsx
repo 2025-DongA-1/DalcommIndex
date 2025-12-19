@@ -2,6 +2,28 @@ import { useMemo } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header"; // ✅ CafeDetail.jsx 위치에 따라 경로 조정 (예: "./components/Header")
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const token = localStorage.getItem("accessToken");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || "요청 실패");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
 export default function CafeDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -76,8 +98,33 @@ export default function CafeDetail() {
             <button
               type="button"
               className="cfd-action cfd-action-primary"
-              onClick={() => alert("즐겨찾기(연동 예정)")}
               title="즐겨찾기"
+              onClick={async () => {
+                const token = localStorage.getItem("accessToken");
+                if (!token) return navigate("/login");
+
+                const cafeId = Number(cafe?.cafe_id ?? cafe?.id);
+                if (!Number.isFinite(cafeId)) {
+                  alert("즐겨찾기는 cafe_id(숫자)가 필요합니다. (현재 상세페이지가 임시 데이터입니다)");
+                  return;
+                }
+
+                try {
+                  await apiFetch("/api/me/favorites", {
+                    method: "POST",
+                    body: {
+                      cafe_id: cafeId,
+                      name: cafe.name,
+                      region: cafe.region,
+                      tags: cafe.tags,
+                    },
+                  });
+                  alert("즐겨찾기에 저장했습니다.");
+                } catch (e) {
+                  if (e?.status === 401 || e?.status === 403) navigate("/login");
+                  else alert(e.message || "즐겨찾기 저장 실패");
+                }
+              }}
             >
               ❤ 저장
             </button>

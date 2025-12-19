@@ -1,9 +1,17 @@
-// groq.js  (※ 파일명 유지, 내부를 OpenAI로 교체)
+// gpt.js  (※ 파일명 유지, 내부를 OpenAI로 교체)
 import "dotenv/config";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+
+// OpenAI 호출 토글
+// - OPENAI_ENABLED=0  : OpenAI 호출 전부 비활성화(규칙 기반 + 템플릿만 사용)
+// - OPENAI_PREFS=1    : 선호도 추출도 OpenAI 사용(기본값 0 → 비용 절감 / 1회 호출 유지)
+// - OPENAI_REPLY=0    : 자연어 설명 생성도 OpenAI 비활성화(기본값 1)
+const OPENAI_ENABLED = process.env.OPENAI_ENABLED !== "0";
+const OPENAI_PREFS = process.env.OPENAI_PREFS === "1";
+const OPENAI_REPLY = process.env.OPENAI_REPLY !== "0";
 
 // (A) 기존과 동일: 규칙 기반(휴리스틱) 유지
 function heuristicPreferences(userMessage) {
@@ -68,17 +76,18 @@ function mergeArr(a = [], b = []) {
 }
 
 async function openaiChat({ messages, temperature = 0.2, max_completion_tokens = 512, response_format }) {
+  if (!OPENAI_ENABLED) throw new Error("OpenAI is disabled (OPENAI_ENABLED=0)");
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is missing");
 
   const body = {
     model: OPENAI_MODEL,
     messages,
     temperature,
-    max_completion_tokens, // Chat Completions에서 권장 파라미터 :contentReference[oaicite:4]{index=4}
+    max_completion_tokens, // Chat Completions에서 권장 파라미터
   };
 
   // JSON 강제 모드(가능하면 사용)
-  if (response_format) body.response_format = response_format; // :contentReference[oaicite:5]{index=5}
+  if (response_format) body.response_format = response_format; //
 
   const res = await fetch(OPENAI_URL, {
     method: "POST",
@@ -104,8 +113,8 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
 export async function extractPreferences(userMessage) {
   const heur = heuristicPreferences(userMessage);
 
-  // 키 없으면 규칙 기반만으로도 동작
-  if (!OPENAI_API_KEY) return heur;
+  // ✅ 기본값: 규칙 기반만 사용(1회 호출 유지). OpenAI로 prefs를 뽑고 싶으면 OPENAI_PREFS=1
+  if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_PREFS) return heur;
 
   const prompt = `
 사용자의 문장을 보고, 카페 추천 조건을 아래 JSON 형식으로만 추출해줘.
@@ -125,7 +134,7 @@ export async function extractPreferences(userMessage) {
 `.trim();
 
   try {
-    // 1차: JSON mode로 “유효한 JSON” 강제 :contentReference[oaicite:6]{index=6}
+    // 1차: JSON mode로 “유효한 JSON” 강제
     let text;
     try {
       text = await openaiChat({
@@ -189,8 +198,7 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
   if (!results || results.length === 0) {
     return "조건에 맞는 카페를 찾지 못했어요. 다른 조건으로 다시 한 번 요청해 주세요 :)";
   }
-
-  if (!OPENAI_API_KEY) {
+  if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_REPLY) {
     const names = results.map((c) => c.name).join(", ");
     return `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
   }

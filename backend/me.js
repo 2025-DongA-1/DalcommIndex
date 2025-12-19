@@ -15,6 +15,15 @@ async function usersHasColumn(col) {
   return ok;
 }
 
+const tableCache = new Map();
+async function tableExists(tableName) {
+  if (tableCache.has(tableName)) return tableCache.get(tableName);
+  const [rows] = await pool.query("SHOW TABLES LIKE ?", [tableName]);
+  const ok = rows.length > 0;
+  tableCache.set(tableName, ok);
+  return ok;
+}
+
 function safeJsonParse(s, fallback) {
   try {
     const v = JSON.parse(s);
@@ -24,18 +33,7 @@ function safeJsonParse(s, fallback) {
   }
 }
 
-async function getUserRow(userId) {
-  const cols = ["user_id", "email", "nickname", "bookmarks_json"];
-  if (await usersHasColumn("region")) cols.push("region");
-  if (await usersHasColumn("settings_json")) cols.push("settings_json");
-
-  const [rows] = await pool.query(
-    `SELECT ${cols.join(", ")} FROM users WHERE user_id = ? LIMIT 1`,
-    [userId]
-  );
-  return rows[0] || null;
-}
-
+/** ====== (fallback) bookmarks_json 기반 ====== */
 async function getBookmarks(userId) {
   const [rows] = await pool.query(
     "SELECT bookmarks_json FROM users WHERE user_id = ? LIMIT 1",
@@ -53,17 +51,92 @@ async function setBookmarks(userId, arr) {
   ]);
 }
 
+/** ====== (main) user_favorites 기반 ====== */
+async function favoritesMode() {
+  // user_favorites가 존재하면 테이블 기반, 없으면 bookmarks_json fallback
+  return (await tableExists("user_favorites")) ? "table" : "json";
+}
+
+async function cafeExists(cafeId) {
+  const [rows] = await pool.query(
+    "SELECT cafe_id FROM cafes WHERE cafe_id = ? LIMIT 1",
+    [cafeId]
+  );
+  return rows.length > 0;
+}
+
+async function getFavoritesFromTable(userId) {
+  // cafes 테이블 컬럼 중 최소 UI에 필요한 것만 사용
+  const [rows] = await pool.query(
+    `SELECT
+        c.cafe_id AS id,
+        c.name,
+        c.region,
+        c.address
+     FROM user_favorites f
+     JOIN cafes c ON c.cafe_id = f.cafe_id
+     WHERE f.user_id = ?
+     ORDER BY f.created_at DESC`,
+    [userId]
+  );
+
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name ?? "카페",
+    region: r.region ?? "",
+    tags: [], // 현재 cafes 테이블에 tags가 없으므로 빈 배열
+    address: r.address ?? "",
+  }));
+}
+
+async function addFavoriteToTable(userId, cafeId) {
+  // FK 전에 존재 여부를 확인하면 에러 메시지를 404로 깔끔하게 처리 가능
+  if (!(await cafeExists(cafeId))) {
+    const err = new Error("카페를 찾을 수 없습니다.");
+    err.status = 404;
+    throw err;
+  }
+
+  await pool.query(
+    `INSERT INTO user_favorites (user_id, cafe_id)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE created_at = created_at`,
+    [userId, cafeId]
+  );
+}
+
+async function removeFavoriteFromTable(userId, cafeId) {
+  await pool.query(
+    "DELETE FROM user_favorites WHERE user_id = ? AND cafe_id = ?",
+    [userId, cafeId]
+  );
+}
+
+/** ====== user row ====== */
+async function getUserRow(userId) {
+  const cols = ["user_id", "email", "nickname", "bookmarks_json"];
+  if (await usersHasColumn("region")) cols.push("region");
+  if (await usersHasColumn("settings_json")) cols.push("settings_json");
+
+  const [rows] = await pool.query(
+    `SELECT ${cols.join(", ")} FROM users WHERE user_id = ? LIMIT 1`,
+    [userId]
+  );
+  return rows[0] || null;
+}
+
 export function createMeRouter() {
   const router = express.Router();
 
-  // ✅ 내 정보 + 설정
+  /** ✅ 내 정보 + 설정 */
   router.get("/me", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
+      const userId = String(req.user.sub);
       const u = await getUserRow(userId);
       if (!u) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
 
-      const settings = (u.settings_json && safeJsonParse(u.settings_json, DEFAULT_SETTINGS)) || DEFAULT_SETTINGS;
+      const settings =
+        (u.settings_json && safeJsonParse(u.settings_json, DEFAULT_SETTINGS)) || DEFAULT_SETTINGS;
 
       return res.json({
         user: {
@@ -80,10 +153,10 @@ export function createMeRouter() {
     }
   });
 
-  // ✅ 회원정보 수정(닉네임/지역/비밀번호)
+  /** ✅ 회원정보 수정(닉네임/지역/비밀번호) */
   router.put("/me", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
+      const userId = String(req.user.sub);
       const { nickname, region, newPassword } = req.body || {};
 
       const sets = [];
@@ -115,12 +188,18 @@ export function createMeRouter() {
       await pool.query(`UPDATE users SET ${sets.join(", ")} WHERE user_id = ?`, params);
 
       const u = await getUserRow(userId);
-      const settings = (u.settings_json && safeJsonParse(u.settings_json, DEFAULT_SETTINGS)) || DEFAULT_SETTINGS;
+      const settings =
+        (u.settings_json && safeJsonParse(u.settings_json, DEFAULT_SETTINGS)) || DEFAULT_SETTINGS;
 
       const token = signToken(u); // nickname 반영용 재발급
 
       return res.json({
-        user: { user_id: u.user_id, email: u.email, nickname: u.nickname, region: u.region || "광주" },
+        user: {
+          user_id: u.user_id,
+          email: u.email,
+          nickname: u.nickname,
+          region: u.region || "광주",
+        },
         settings,
         token,
       });
@@ -130,13 +209,19 @@ export function createMeRouter() {
     }
   });
 
-  // ✅ 즐겨찾기 목록(bookmarks_json 기반)
+  /** ✅ 즐겨찾기 목록 (user_favorites 우선, 없으면 bookmarks_json fallback) */
   router.get("/me/favorites", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
-      const arr = await getBookmarks(userId);
+      const userId = String(req.user.sub);
+      const mode = await favoritesMode();
 
-      // bookmarks_json에 객체/문자열/숫자 섞여 있어도 UI에서 쓰기 쉽게 normalize
+      if (mode === "table") {
+        const items = await getFavoritesFromTable(userId);
+        return res.json({ items });
+      }
+
+      // fallback: bookmarks_json
+      const arr = await getBookmarks(userId);
       const items = arr.map((x) => {
         if (x && typeof x === "object") {
           return {
@@ -156,17 +241,71 @@ export function createMeRouter() {
     }
   });
 
+  /** ✅ 즐겨찾기 추가 (POST) */
+  router.post("/me/favorites", authRequired, async (req, res) => {
+    try {
+      const userId = String(req.user.sub);
+      const mode = await favoritesMode();
+
+      // 프론트에서 cafe_id(권장) 또는 id로 보내도 받도록 처리
+      const raw = req.body?.cafe_id ?? req.body?.id;
+      const cafeId = Number(raw);
+
+      if (!Number.isFinite(cafeId)) {
+        return res.status(400).json({ message: "cafe_id(숫자)가 필요합니다." });
+      }
+
+      if (mode === "table") {
+        await addFavoriteToTable(userId, cafeId);
+        return res.json({ ok: true, added: true });
+      }
+
+      // fallback: bookmarks_json에 객체로 저장
+      const arr = await getBookmarks(userId);
+      const exists = arr.some((x) => {
+        if (x && typeof x === "object") return String(x.id ?? x.cafe_id ?? x.name) === String(raw);
+        return String(x) === String(raw);
+      });
+      if (!exists) {
+        arr.push({
+          id: String(raw),
+          name: String(req.body?.name ?? "카페"),
+          region: String(req.body?.region ?? ""),
+          tags: Array.isArray(req.body?.tags) ? req.body.tags : [],
+        });
+        await setBookmarks(userId, arr);
+      }
+      return res.json({ ok: true, added: !exists });
+    } catch (e) {
+      const status = e?.status || 500;
+      console.error("[me/favorites/post]", e);
+      return res.status(status).json({ message: e.message || "즐겨찾기 추가 실패" });
+    }
+  });
+
+  /** ✅ 즐겨찾기 삭제 */
   router.delete("/me/favorites/:id", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
-      const target = String(req.params.id);
+      const userId = String(req.user.sub);
+      const mode = await favoritesMode();
 
+      const targetRaw = String(req.params.id);
+      const targetNum = Number(targetRaw);
+
+      if (mode === "table") {
+        if (!Number.isFinite(targetNum)) {
+          return res.status(400).json({ message: "즐겨찾기 삭제는 cafe_id(숫자) 기준입니다." });
+        }
+        await removeFavoriteFromTable(userId, targetNum);
+        return res.json({ ok: true });
+      }
+
+      // fallback: bookmarks_json
       const arr = await getBookmarks(userId);
       const next = arr.filter((x) => {
-        if (x && typeof x === "object") return String(x.id ?? x.cafe_id ?? x.name) !== target;
-        return String(x) !== target;
+        if (x && typeof x === "object") return String(x.id ?? x.cafe_id ?? x.name) !== targetRaw;
+        return String(x) !== targetRaw;
       });
-
       await setBookmarks(userId, next);
       return res.json({ ok: true });
     } catch (e) {
@@ -175,15 +314,15 @@ export function createMeRouter() {
     }
   });
 
-  // ✅ 리뷰: 테이블 붙이기 전까지는 “빈 배열”로라도 200 응답(마이페이지가 깨지지 않게)
+  /** ✅ 리뷰(임시) */
   router.get("/me/reviews", authRequired, async (req, res) => res.json({ items: [] }));
   router.put("/me/reviews/:id", authRequired, async (req, res) => res.json({ ok: true }));
   router.delete("/me/reviews/:id", authRequired, async (req, res) => res.json({ ok: true }));
 
-  // ✅ 설정 저장: settings_json 컬럼 있으면 저장, 없으면 그냥 OK
+  /** ✅ 설정 저장 */
   router.put("/me/settings", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
+      const userId = String(req.user.sub);
       const body = req.body || {};
       const next = {
         marketing: !!body.marketing,
@@ -203,10 +342,10 @@ export function createMeRouter() {
     }
   });
 
-  // ✅ 회원 탈퇴
+  /** ✅ 회원 탈퇴 */
   router.delete("/me", authRequired, async (req, res) => {
     try {
-      const userId = Number(req.user.sub);
+      const userId = String(req.user.sub);
       await pool.query("DELETE FROM users WHERE user_id = ?", [userId]);
       return res.json({ ok: true });
     } catch (e) {
