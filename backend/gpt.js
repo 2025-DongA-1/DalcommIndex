@@ -75,6 +75,34 @@ function mergeArr(a = [], b = []) {
   return Array.from(new Set([...a, ...b]));
 }
 
+function hasAny(v) {
+  return Array.isArray(v) && v.length > 0;
+}
+
+// ✅ 연속 대화에서 부족한 조건을 채우기 위한 “후속 질문” 생성(규칙 기반)
+export function buildFollowUpQuestion(prefs) {
+  const p = prefs && typeof prefs === "object" ? prefs : {};
+
+  const region = hasAny(p.region);
+  const purpose = hasAny(p.purpose);
+  const atmos = hasAny(p.atmosphere);
+  const taste = hasAny(p.taste);
+  const menu = hasAny(p.menu);
+  const required = hasAny(p.required);
+
+  // 우선순위: 지역 → 목적/분위기 → 메뉴/맛 → 필수조건
+  if (!region) return "어느 지역을 원하세요? (광주 / 나주 / 담양 / 화순 / 장성)";
+  if (!purpose && !atmos) return "어떤 느낌으로 찾으세요? (공부/작업 / 데이트 / 조용한 / 감성 / 뷰)";
+  if (!purpose) return "방문 목적이 있으세요? (공부/작업 / 데이트 / 수다 / 가족)";
+  if (!atmos) return "원하시는 분위기를 알려주실까요? (조용한 / 감성 / 뷰)";
+  if (!menu && !taste) return "원하시는 메뉴/디저트가 있나요? (케이크 / 소금빵 / 크로플 / 휘낭시에)";
+
+  // 너무 잦은 질문을 피하려고 required는 마지막에만 가볍게
+  if (!required) return "주차 같은 필수 조건이 있나요? (주차 필요 / 상관없음)";
+
+  return null;
+}
+
 async function openaiChat({ messages, temperature = 0.2, max_completion_tokens = 512, response_format }) {
   if (!OPENAI_ENABLED) throw new Error("OpenAI is disabled (OPENAI_ENABLED=0)");
   if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY is missing");
@@ -87,7 +115,7 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
   };
 
   // JSON 강제 모드(가능하면 사용)
-  if (response_format) body.response_format = response_format; //
+  if (response_format) body.response_format = response_format;
 
   const res = await fetch(OPENAI_URL, {
     method: "POST",
@@ -113,7 +141,7 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
 export async function extractPreferences(userMessage) {
   const heur = heuristicPreferences(userMessage);
 
-  // ✅ 기본값: 규칙 기반만 사용(1회 호출 유지). OpenAI로 prefs를 뽑고 싶으면 OPENAI_PREFS=1
+  // ✅ 기본값: 규칙 기반만 사용. OpenAI로 prefs를 뽑고 싶으면 OPENAI_PREFS=1
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_PREFS) return heur;
 
   const prompt = `
@@ -134,7 +162,6 @@ export async function extractPreferences(userMessage) {
 `.trim();
 
   try {
-    // 1차: JSON mode로 “유효한 JSON” 강제
     let text;
     try {
       text = await openaiChat({
@@ -147,7 +174,6 @@ export async function extractPreferences(userMessage) {
         response_format: { type: "json_object" },
       });
     } catch (e) {
-      // 모델/계정 설정에 따라 response_format이 에러날 수 있어 재시도
       text = await openaiChat({
         messages: [
           { role: "system", content: "You extract structured JSON for cafe recommendation preferences." },
@@ -158,7 +184,6 @@ export async function extractPreferences(userMessage) {
       });
     }
 
-    // JSON만 잘라내기
     let jsonText = text;
     const first = text.indexOf("{");
     const last = text.lastIndexOf("}");
@@ -192,15 +217,20 @@ export async function extractPreferences(userMessage) {
 }
 
 /**
- * 2) 추천 결과를 자연어 설명으로 생성
+ * 2) 추천 결과를 자연어 설명으로 생성 (+ 부족한 조건에 대한 후속 질문 1개 자동 부착)
  */
 export async function generateRecommendationMessage(userMessage, prefs, results) {
+  const followUp = buildFollowUpQuestion(prefs);
+
   if (!results || results.length === 0) {
-    return "조건에 맞는 카페를 찾지 못했어요. 다른 조건으로 다시 한 번 요청해 주세요 :)";
+    const base = "조건에 맞는 카페를 찾지 못했어요. 조건을 조금 바꿔서 다시 말씀해 주세요.";
+    return followUp ? `${base}\n\n${followUp}` : base;
   }
+
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_REPLY) {
     const names = results.map((c) => c.name).join(", ");
-    return `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    const base = `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    return followUp ? `${base}\n\n${followUp}` : base;
   }
 
   const simpleResults = results.map((cafe) => ({
@@ -216,7 +246,6 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
     main_coffee: cafe.main_coffee || "",
     parking: cafe.parking || "",
     summary: cafe.summary || "",
-    url: cafe.url || "",
   }));
 
   const prompt = `
@@ -234,6 +263,7 @@ ${JSON.stringify(simpleResults, null, 2)}
 위 정보를 바탕으로, 한국어 존댓말로 1~3문단 정도로 자연스럽게 설명해줘.
 - 맨 앞에 "다음 카페들을 추천드릴게요."로 시작
 - 핵심 특징(위치, 분위기, 디저트/커피, 주차 등) 위주
+- 마지막에 질문(후속 질문)은 넣지 마 (질문은 서버가 별도로 붙일 거야)
 `.trim();
 
   try {
@@ -245,10 +275,11 @@ ${JSON.stringify(simpleResults, null, 2)}
       temperature: 0.3,
       max_completion_tokens: 600,
     });
-    return text;
+    return followUp ? `${text}\n\n${followUp}` : text;
   } catch (err) {
     console.warn("[openai] 설명 생성 실패, fallback 사용:", err?.message || err);
     const names = results.map((c) => c.name).join(", ");
-    return `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    const base = `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    return followUp ? `${base}\n\n${followUp}` : base;
   }
 }

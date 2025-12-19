@@ -3,6 +3,14 @@ import { useNavigate } from "react-router-dom";
 
 const Chat = () => {
   const API_BASE = import.meta.env.VITE_API_BASE || "";
+  
+  // ✅ 연속 대화(컨텍스트 유지)용: 같은 탭/페이지에서 고정 sessionId 유지
+  const sessionIdRef = useRef(
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `sid_${Date.now()}_${Math.random().toString(16).slice(2)}`
+  );
+  const [prevPrefs, setPrevPrefs] = useState(null);
 
   async function apiFetch(path, { method = "POST", body } = {}) {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -35,6 +43,25 @@ const Chat = () => {
 
   const [messages, setMessages] = useState([]);
   const [isSending, setIsSending] = useState(false);
+
+  // ✅ 연속 대화(컨텍스트) 유지용: 서버가 내려준 prefs를 저장했다가 다음 요청에 함께 전송
+  const [chatPrefs, setChatPrefs] = useState(null);
+
+  // ✅ 탭(세션) 단위로 유지되는 sessionId (새로고침해도 유지)
+  const [chatSessionId] = useState(() => {
+    const key = "dalcomm_chat_session_id";
+    try {
+      let v = sessionStorage.getItem(key);
+      if (!v) {
+        v = (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`);
+        sessionStorage.setItem(key, v);
+      }
+      return v;
+    } catch {
+      // sessionStorage가 막힌 환경 대비
+      return (crypto?.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`);
+    }
+  });
 
   const formatNow = () => {
     const d = new Date();
@@ -80,8 +107,15 @@ const Chat = () => {
     try {
       const data = await apiFetch("/api/chat", {
         method: "POST",
-        body: { message: text },
+        body: {
+          message: text,
+          sessionId: sessionIdRef.current,
+          prevPrefs: prevPrefs || undefined,
+        },
       });
+
+      if (data?.sessionId) sessionIdRef.current = data.sessionId;
+      if (data?.prefs) setPrevPrefs(data.prefs);
 
       const botText = (data?.message || "응답을 받지 못했습니다.").toString();
       const results = Array.isArray(data?.results) ? data.results : [];

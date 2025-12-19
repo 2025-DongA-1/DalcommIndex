@@ -11,7 +11,8 @@ import { loadCafes } from "./data.js";          // CSV fallback
 import { loadCafesFromDB } from "./data_db.js"; // DB loader(있어야 함)
 
 import { recommendCafes } from "./recommend.js";
-import { extractPreferences, generateRecommendationMessage } from "./gpt.js";
+import { extractPreferences, generateRecommendationMessage, buildFollowUpQuestion } from "./gpt.js";
+
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -57,6 +58,140 @@ let cafesLoadedFrom = null;
 /** ✅ 챗봇 mock 옵션(원하지 않으면 0으로 두면 됨) */
 const CHATBOT_MOCK = process.env.CHATBOT_MOCK === "1";
 const mockCafes = []; // 필요하면 샘플 데이터를 넣으세요. 없으면 빈 배열.
+
+/** ===============================
+ * ✅ 챗봇 컨텍스트(연속 대화) 저장소
+ * - 기본은 인메모리(Map)라서 서버 재시작 시 초기화됩니다.
+ * - 운영에서 다중 인스턴스를 쓰면 Redis 같은 외부 저장소로 교체하세요.
+ * =============================== */
+const chatSessions = new Map();
+const CHAT_SESSION_TTL_MS = 30 * 60 * 1000; // 30분
+const CHAT_RESULTS_PER_TURN = 3; // ✅ 카드(결과) 개수: 3개
+
+function uniq(arr) {
+  return Array.from(new Set(Array.isArray(arr) ? arr : []));
+}
+
+function normalizePrefObj(p) {
+  const x = p && typeof p === "object" ? p : {};
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+  return {
+    region: arr(x.region),
+    atmosphere: arr(x.atmosphere),
+    taste: arr(x.taste),
+    purpose: arr(x.purpose),
+    menu: arr(x.menu),
+    required: arr(x.required),
+    minSentiment: num(x.minSentiment),
+  };
+}
+
+
+function stablePrefsKey(prefs) {
+  const p = normalizePrefObj(prefs);
+  const sort = (a) => uniq(a).slice().sort();
+  return JSON.stringify({
+    region: sort(p.region),
+    atmosphere: sort(p.atmosphere),
+    taste: sort(p.taste),
+    purpose: sort(p.purpose),
+    menu: sort(p.menu),
+    required: sort(p.required),
+    minSentiment: Number(p.minSentiment || 0),
+  });
+}
+
+function isMoreRequest(text) {
+  const t = (text || "").toString();
+  return /(다른\s*곳|다른\s*데|더\s*(?:추천|알려)|추가\s*(?:추천|알려)|또\s*(?:추천|알려)|다음\s*(?:추천|카페))/i.test(t);
+}
+
+function mergePrefs(base, delta, userMessage) {
+  const a = normalizePrefObj(base);
+  const b = normalizePrefObj(delta);
+  const msg = (userMessage || "").toString();
+
+  // ✅ "바꿔줘/대신/말고" 등은 기존 조건을 교체하고 싶다는 힌트로 간주
+  const replaceHint = /(대신|말고|바꿔|변경|다른\s*(?:분위기|목적|메뉴|지역))/i.test(msg);
+
+  // region은 보통 단일 선택 성격이 강해서: 새 값이 들어오면 교체
+  const region = b.region.length ? uniq(b.region) : uniq(a.region);
+
+  return {
+    region,
+    atmosphere: replaceHint && b.atmosphere.length ? uniq(b.atmosphere) : uniq([...a.atmosphere, ...b.atmosphere]),
+    taste: replaceHint && b.taste.length ? uniq(b.taste) : uniq([...a.taste, ...b.taste]),
+    purpose: replaceHint && b.purpose.length ? uniq(b.purpose) : uniq([...a.purpose, ...b.purpose]),
+    menu: replaceHint && b.menu.length ? uniq(b.menu) : uniq([...a.menu, ...b.menu]),
+    required: replaceHint && b.required.length ? uniq(b.required) : uniq([...a.required, ...b.required]),
+    minSentiment: Math.max(a.minSentiment || 0, b.minSentiment || 0),
+  };
+}
+
+function getChatSession(sessionId) {
+  const s = chatSessions.get(sessionId);
+  if (!s) return null;
+  if (!s.updatedAt || Date.now() - s.updatedAt > CHAT_SESSION_TTL_MS) {
+    chatSessions.delete(sessionId);
+    return null;
+  }
+  return s;
+}
+
+// 주기적 GC(선택): 오래된 세션 정리
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of chatSessions.entries()) {
+    if (!v?.updatedAt || now - v.updatedAt > CHAT_SESSION_TTL_MS) chatSessions.delete(k);
+  }
+}, 5 * 60 * 1000).unref?.();
+
+// function uniq(arr) {
+//   return Array.from(new Set((arr || []).map((v) => String(v || "").trim()).filter(Boolean)));
+// }
+
+// // "대신/말고/변경" 등이 있으면 해당 필드를 '교체' 우선으로 처리
+// function mergePrefs(prevPrefs, nextPrefs, userMessage = "") {
+//   const a = normalizePrefObj(prevPrefs);
+//   const b = normalizePrefObj(nextPrefs);
+
+//   const replaceHint = /(대신|말고|바꿔|변경|정정)/.test(userMessage);
+
+//   return {
+//     // ✅ 지역은 혼합 추천이 어색한 경우가 많아서: 새 지역이 나오면 교체, 아니면 유지
+//     region: b.region.length ? uniq(b.region) : uniq(a.region),
+
+//     // ✅ 나머지는 기본적으로 누적, replaceHint면 교체
+//     atmosphere: replaceHint && b.atmosphere.length ? uniq(b.atmosphere) : uniq([...a.atmosphere, ...b.atmosphere]),
+//     taste: replaceHint && b.taste.length ? uniq(b.taste) : uniq([...a.taste, ...b.taste]),
+//     purpose: replaceHint && b.purpose.length ? uniq(b.purpose) : uniq([...a.purpose, ...b.purpose]),
+//     menu: replaceHint && b.menu.length ? uniq(b.menu) : uniq([...a.menu, ...b.menu]),
+//     required: replaceHint && b.required.length ? uniq(b.required) : uniq([...a.required, ...b.required]),
+
+//     minSentiment: Math.max(a.minSentiment || 0, b.minSentiment || 0),
+//   };
+// }
+
+// function getChatSession(sessionId) {
+//   const s = chatSessions.get(sessionId);
+//   if (!s) return null;
+//   if (!s.updatedAt || Date.now() - s.updatedAt > CHAT_SESSION_TTL_MS) {
+//     chatSessions.delete(sessionId);
+//     return null;
+//   }
+//   return s;
+// }
+
+// // 주기적 GC(선택): 오래된 세션 정리
+// setInterval(() => {
+//   const now = Date.now();
+//   for (const [k, v] of chatSessions.entries()) {
+//     if (!v?.updatedAt || now - v.updatedAt > CHAT_SESSION_TTL_MS) chatSessions.delete(k);
+//   }
+// }, 5 * 60 * 1000).unref?.();
+
 
 function pickCafeResultFields(cafe) {
   return {
@@ -642,18 +777,55 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
         });
       }
 
-      const { message } = req.body || {};
+      const { message, sessionId, prevPrefs } = req.body || {};
       const userMessage =
         typeof message === "string" && message.trim() ? message.trim() : "광주 분위기 좋은 카페 추천해줘";
 
-      let prefs;
-      try {
-        prefs = await extractPreferences(userMessage);
-      } catch {
-        prefs = { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [] };
+      // ✅ 세션: 같은 브라우저/페이지에서 연속 질문이면 sessionId를 유지해서 보내도록(프론트에서 구현)
+      const sid = typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : "";
+      const isMore = isMoreRequest(userMessage);
+
+      // 사용자가 "초기화"를 요청하면 컨텍스트 리셋
+      if (sid && /^(초기화|리셋|reset)$/i.test(userMessage)) {
+        chatSessions.delete(sid);
+        return res.json({
+          ok: true,
+          warning,
+          sessionId: sid,
+          message: "대화 조건을 초기화했어요. 원하시는 지역/분위기/목적을 다시 말씀해 주세요.",
+          prefs: { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [], minSentiment: 0 },
+          results: [],
+        });
       }
 
-      const recs = recommendCafes(prefs, cafesForChat, 5);
+      const session = sid ? getChatSession(sid) : null;
+      const basePrefs = session?.prefs || prevPrefs || {};
+
+      let deltaPrefs;
+      try {
+        deltaPrefs = await extractPreferences(userMessage);
+      } catch {
+        deltaPrefs = { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [], minSentiment: 0 };
+      }
+
+      // ✅ (핵심) 이전 질문을 기억하도록 basePrefs + deltaPrefs를 병합
+      const prefs = mergePrefs(basePrefs, deltaPrefs, userMessage);
+
+      // ✅ 조건이 바뀌면(새로운 질의) 이전에 보여준 카페 목록(seenIds) 초기화
+      const key = stablePrefsKey(prefs);
+      const nextSession = session || (sid ? { prefs: {}, prefsKey: "", seenIds: [], followUpAsked: false, updatedAt: 0 } : null);
+      if (nextSession && !isMore && nextSession.prefsKey && nextSession.prefsKey !== key) {
+        nextSession.seenIds = [];
+        nextSession.followUpAsked = false;
+      }
+
+      // ✅ 추천 결과: 기본은 3개만 카드로 보여주기
+      // - "다른 곳도 추천"이면 기존에 보여준 카페는 제외하고 다음 3개를 반환
+      const poolK = Math.max(CHAT_RESULTS_PER_TURN * 20, 30);
+      const pool = recommendCafes(prefs, cafesForChat, poolK);
+      const seenSet = new Set(nextSession?.seenIds || []);
+      let recs = pool.filter((c) => !seenSet.has(c.id)).slice(0, CHAT_RESULTS_PER_TURN);
+      if (!recs.length) recs = pool.slice(0, CHAT_RESULTS_PER_TURN);
 
       let replyMessage;
       try {
@@ -665,18 +837,41 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
             : `조건에 맞는 카페를 찾지 못했어요. 조건을 조금 완화해보세요.`;
       }
 
+      // ✅ 후속 질문은 "한 번만"(그리고 "다른 곳도 추천" 같은 추가 요청에는 붙이지 않음)
+      if (nextSession && !isMore && !nextSession.followUpAsked) {
+        const followUp = buildFollowUpQuestion(prefs);
+        if (followUp) {
+          replyMessage = `${replyMessage}\n\n${followUp}`;
+          nextSession.followUpAsked = true;
+        }
+      }
+
+      // ✅ 세션 갱신
+      if (sid) {
+        const ids = recs.map((c) => c.id).filter(Boolean);
+        if (nextSession) {
+          nextSession.prefs = prefs;
+          nextSession.prefsKey = key;
+          nextSession.seenIds = uniq([...(nextSession.seenIds || []), ...ids]).slice(-300);
+          nextSession.updatedAt = Date.now();
+          chatSessions.set(sid, nextSession);
+        }
+      }
+
       return res.json({
         ok: true,
         warning,
         message: replyMessage,
         prefs,
         results: recs.map(pickCafeResultFields),
+        sessionId: sid || undefined,
       });
     } catch (err) {
       console.error(err);
       return res.status(500).json({ ok: false, message: "Internal server error" });
     }
   });
+
 
   /** ✅ /api, /auth는 404도 JSON으로 반환 */
   app.use((req, res, next) => {
