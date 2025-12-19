@@ -225,13 +225,12 @@ export default function Search() {
     };
   }, [spKey]);
 
-  const regionLabel = useMemo(() => {
-    const rs = parseList(sp.get("region"));
-    if (!rs.length) return "전체";
-    return rs
-      .map((v) => REGION_OPTIONS.find((x) => x.value === v)?.label ?? v)
-      .join(", ");
-  }, [sp]);
+const regionPills = useMemo(() => {
+  const rs = parseList(sp.get("region"));
+  if (!rs.length) return ["전체"];
+
+  return rs.map((v) => REGION_OPTIONS.find((x) => x.value === v)?.label ?? v);
+}, [spKey]); // spKey 추천(지금 구조랑 맞음)
 
   
 
@@ -258,11 +257,22 @@ export default function Search() {
     const keepRegions = regions;
     const keepQ = q;
 
+    setRegions([]);          // 전체(=지역 선택 해제)
+  setQ("");                // 검색어 제거
+  setSort("relevance");    // 정렬 기본값
+  setThemes([]);           // 테마 해제
+  setDesserts([]);         // 디저트 해제
+
+  // 2) URL 파라미터도 전부 삭제 (검색결과 상단 pill도 같이 초기화됨)
+  setSp(new URLSearchParams(), { replace: true });
+
 
     
     setSort("relevance");
     setThemes([]);
     setDesserts([]);
+
+    
 
     pushParams({
       regions: keepRegions,
@@ -272,6 +282,9 @@ export default function Search() {
       desserts: [],
     });
   };
+
+
+  
 
   return (
     <div className="sr-page">
@@ -283,7 +296,10 @@ export default function Search() {
           <div className="sr-title">
             <h1>검색 결과</h1>
             <p className="sr-summary">
-              <span className="pill">{regionLabel}</span>
+              {regionPills.map((label) => (
+                <span key={label} className="pill">{label}</span>
+  ))}
+
               {summaryQ ? (
                 <>
                   <span className="dot">·</span>
