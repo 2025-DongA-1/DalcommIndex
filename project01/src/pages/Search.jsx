@@ -5,6 +5,13 @@ import "../styles/Search.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+const parseList = (v) =>
+  (v ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .filter((x) => x !== "all");
+
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
   const res = await fetch(`${API_BASE}${path}`, {
@@ -51,29 +58,45 @@ const DESSERT_OPTIONS = ["케이크", "마카롱", "말차", "소금빵", "크�
 function fallbackThumb(regionKey) {
   // 기존 Search MOCK에서 쓰던 이미지 경로와 맞춤
   if (regionKey === "dong-gu") return "/main/dong-gu.jpg";
-  if (regionKey === "nam-gu") return "/main/nam-gu.jpg";
-  if (regionKey === "buk-gu") return "/main/buk-gu.jpg";
-  if (regionKey === "seo-gu") return "/main/seo-gu.jpg";
-  if (regionKey === "gwangsan-gu") return "/main/gwangsan-gu.jpg";
+  if (regionKey === "nam-gu") return "/main/namgu.png";
+  if (regionKey === "buk-gu") return "/main/bukgu.jpg";
+  if (regionKey === "seo-gu") return "/main/seogu.jpg";
+  if (regionKey === "gwangsan-gu") return "/main/gwangsan.jpg";
   if (regionKey === "hwasun") return "/main/hwasun.jpg";
   if (regionKey === "damyang") return "/main/damyang.jpg";
   if (regionKey === "naju") return "/main/naju.jpg";
   return "/main/gwangsan-gu.jpg";
 }
 
+function normalizeThumb(src, regionKey) {
+  const s0 = String(src ?? "");
+  const s = s0.replace(/^\uFEFF/, "").trim(); // BOM 제거
+  const lower = s.toLowerCase();
+
+  if (!s || s === "\\N" || lower === "null") return fallbackThumb(regionKey);
+
+  // file://, file:/ 변형까지 방어 (대소문자 포함)
+  if (lower.includes("file://") || lower.includes("file:/")) return fallbackThumb(regionKey);
+  // 윈도우 절대경로(C:\...) 방어
+  if (/^[a-zA-Z]:\\/.test(s)) return fallbackThumb(regionKey);
+
+  return s;
+}
+
 export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
+  const spKey = sp.toString();
 
   // URL -> 초기값
-  const initialRegion = sp.get("region") ?? "all";
+  const initialRegions = parseList(sp.get("region"));
   const initialQ = sp.get("q") ?? "";
   const initialSort = sp.get("sort") ?? "relevance"; // relevance | score | rating | reviews
   const initialThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
   const initialDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
 
   // 폼 상태
-  const [region, setRegion] = useState(initialRegion);
+  const [regions, setRegions] = useState(initialRegions);
   const [q, setQ] = useState(initialQ);
   const [sort, setSort] = useState(initialSort);
   const [themes, setThemes] = useState(initialThemes);
@@ -84,31 +107,64 @@ export default function Search() {
   const [results, setResults] = useState([]);
 
   // ✅ URL 변경 시 폼 상태도 동기화 (뒤로가기/앞으로가기 대응)
+  // useEffect(() => {
+  //   setRegions(parseList(sp.get("region")));
+  //   setQ(sp.get("q") ?? "");
+  //   setSort(sp.get("sort") ?? "relevance");
+  //   setThemes((sp.get("themes") ?? "").split(",").filter(Boolean));
+  //   setDesserts((sp.get("desserts") ?? "").split(",").filter(Boolean));
+  // }, [sp]);
+
   useEffect(() => {
-    setRegion(sp.get("region") ?? "all");
-    setQ(sp.get("q") ?? "");
-    setSort(sp.get("sort") ?? "relevance");
-    setThemes((sp.get("themes") ?? "").split(",").filter(Boolean));
-    setDesserts((sp.get("desserts") ?? "").split(",").filter(Boolean));
-  }, [sp]);
+    const params = new URLSearchParams(spKey);
+
+    setRegions(parseList(params.get("region")));
+    setQ(params.get("q") ?? "");
+    setSort(params.get("sort") ?? "relevance");
+    setThemes((params.get("themes") ?? "").split(",").filter(Boolean));
+    setDesserts((params.get("desserts") ?? "").split(",").filter(Boolean));
+  }, [spKey]);
+    
+  // const pushParams = (next) => {
+  //   const params = new URLSearchParams();
+
+  //   const nextRegions = next.regions ?? regions;
+  //   const nextQ = (next.q ?? q).trim();
+  //   const nextSort = next.sort ?? sort;
+  //   const nextThemes = next.themes ?? themes;
+  //   const nextDesserts = next.desserts ?? desserts;
+
+  //   if (nextRegions?.length) params.set("region", nextRegions.join(",")); 
+  //   if (nextQ) params.set("q", nextQ);
+  //   if (nextSort) params.set("sort", nextSort);
+  //   if (nextThemes?.length) params.set("themes", nextThemes.join(","));
+  //   if (nextDesserts?.length) params.set("desserts", nextDesserts.join(","));
+
+  //   setSp(params, { replace: true });
+  // };
 
   const pushParams = (next) => {
     const params = new URLSearchParams();
 
-    const nextRegion = next.region ?? region;
+    const nextRegions = next.regions ?? regions;
     const nextQ = (next.q ?? q).trim();
     const nextSort = next.sort ?? sort;
     const nextThemes = next.themes ?? themes;
     const nextDesserts = next.desserts ?? desserts;
 
-    if (nextRegion !== "all") params.set("region", nextRegion);
+    if (nextRegions?.length) params.set("region", nextRegions.join(","));
     if (nextQ) params.set("q", nextQ);
     if (nextSort) params.set("sort", nextSort);
     if (nextThemes?.length) params.set("themes", nextThemes.join(","));
     if (nextDesserts?.length) params.set("desserts", nextDesserts.join(","));
 
-    setSp(params, { replace: true });
+    const nextKey = params.toString();
+    if (nextKey !== spKey) {
+      setSp(params, { replace: true });
+    }
   };
+
+
 
   const applySearch = (e) => {
     if (e) e.preventDefault();
@@ -117,21 +173,21 @@ export default function Search() {
 
   // ✅ URL 변경 -> DB API 호출
   useEffect(() => {
-    const controller = new AbortController();
     let alive = true;
 
-    const urlRegion = sp.get("region") ?? "all";
-    const urlQ = (sp.get("q") ?? "").trim();
-    const urlSort = sp.get("sort") ?? "relevance";
-    const urlThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
-    const urlDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
+    const paramsIn = new URLSearchParams(spKey);
+    const urlRegions = parseList(paramsIn.get("region"));
+    const urlQ = (paramsIn.get("q") ?? "").trim();
+    const urlSort = paramsIn.get("sort") ?? "relevance";
+    const urlThemes = (paramsIn.get("themes") ?? "").split(",").filter(Boolean);
+    const urlDesserts = (paramsIn.get("desserts") ?? "").split(",").filter(Boolean);
 
     (async () => {
       try {
         setLoading(true);
 
         const params = new URLSearchParams();
-        if (urlRegion !== "all") params.set("region", urlRegion);
+        if (urlRegions.length) params.set("region", urlRegions.join(","));
         if (urlQ) params.set("q", urlQ);
         if (urlSort) params.set("sort", urlSort);
         if (urlThemes.length) params.set("themes", urlThemes.join(","));
@@ -143,10 +199,9 @@ export default function Search() {
         if (!alive) return;
 
         const items = Array.isArray(data.items) ? data.items : [];
-        // thumb fallback + 안전 보정
         const normalized = items.map((x) => ({
           ...x,
-          thumb: x.thumb || fallbackThumb(x.region),
+          thumb: normalizeThumb(x.thumb, x.region),
           rating: x.rating ?? null,
           reviewCount: x.reviewCount ?? 0,
           why: Array.isArray(x.why) ? x.why : [],
@@ -159,7 +214,6 @@ export default function Search() {
       } catch (e) {
         if (!alive) return;
         setResults([]);
-        // 503(DB 미설정) 등은 사용자에게 명확히 보여주는 편이 좋음
         console.error(e);
       } finally {
         if (alive) setLoading(false);
@@ -168,14 +222,18 @@ export default function Search() {
 
     return () => {
       alive = false;
-      controller.abort();
     };
-  }, [sp]);
+  }, [spKey]);
 
   const regionLabel = useMemo(() => {
-    const r = sp.get("region") ?? "all";
-    return REGION_OPTIONS.find((x) => x.value === r)?.label ?? "전체";
+    const rs = parseList(sp.get("region"));
+    if (!rs.length) return "전체";
+    return rs
+      .map((v) => REGION_OPTIONS.find((x) => x.value === v)?.label ?? v)
+      .join(", ");
   }, [sp]);
+
+  
 
   const summaryQ = sp.get("q") ?? "";
   const count = results.length;
@@ -187,18 +245,27 @@ export default function Search() {
   const toggleDessert = (name) => {
     setDesserts((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
+  
+
+ const toggleRegion = (val) => {
+  setRegions((prev) =>
+    prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]
+  );
+};
 
   const resetFilters = () => {
     // 지역/검색어는 유지하고, 필터/정렬만 초기화
-    const keepRegion = region;
+    const keepRegions = regions;
     const keepQ = q;
 
+
+    
     setSort("relevance");
     setThemes([]);
     setDesserts([]);
 
     pushParams({
-      region: keepRegion,
+      regions: keepRegions,
       q: keepQ,
       sort: "relevance",
       themes: [],
@@ -229,16 +296,16 @@ export default function Search() {
           </div>
 
           <form className="sr-search" onSubmit={applySearch}>
-            <label className="sr-field">
+            {/* <label className="sr-field">
               <span className="sr-label">지역</span>
-              <select value={region} onChange={(e) => setRegion(e.target.value)}>
+              <select value={regions} onChange={(e) => setRegions(e.target.value)}>
                 {REGION_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}
               </select>
-            </label>
+            </label> */}
 
             <label className="sr-field grow">
               <span className="sr-label">검색</span>
@@ -277,20 +344,48 @@ export default function Search() {
             </div>
 
             <div className="filter-block">
-              <div className="filter-title">테마</div>
-              <div className="check-list">
-                {THEME_OPTIONS.map((t) => (
-                  <label key={t.key} className="check">
-                    <input
-                      type="checkbox"
-                      checked={themes.includes(t.key)}
-                      onChange={() => toggleTheme(t.key)}
-                    />
-                    <span>{t.label}</span>
-                  </label>
-                ))}
-              </div>
+                <div className="filter-title">지역</div>
+                  <div className="check-list">
+                    {/* 전체(= regions 비우기) */}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={regions.length === 0}
+                        onChange={() => setRegions([])}
+                      />
+                      <span>전체</span>
+                    </label>
+
+                    {REGION_OPTIONS.filter((o) => o.value !== "all").map((opt) => (
+                      <label key={opt.value} className="check">
+                        <input
+                          type="checkbox"
+                          checked={regions.includes(opt.value)}
+                          onChange={() => toggleRegion(opt.value)}
+                        />
+                        <span>{opt.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+
+
+          <div className="filter-block">
+            <div className="filter-title">테마</div>
+            <div className="check-list">
+              {THEME_OPTIONS.map((t) => (
+                <label key={t.key} className="check">
+                  <input
+                    type="checkbox"
+                    checked={themes.includes(t.key)}
+                    onChange={() => toggleTheme(t.key)}
+                  />
+                  <span>{t.label}</span>
+                </label>
+              ))}
             </div>
+          </div>
 
             <div className="filter-block">
               <div className="filter-title">디저트</div>
@@ -339,7 +434,15 @@ export default function Search() {
                   onClick={() => navigate(`/cafe/${x.id}`)}
                 >
                   <div className="thumb">
-                    <img src={x.thumb} alt="" />
+                    <img
+                      src={x.thumb}
+                      alt=""
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = fallbackThumb(x.region);
+                      }}
+                    />
                   </div>
 
                   <div className="info">
@@ -375,4 +478,6 @@ export default function Search() {
       </main>
     </div>
   );
+  
 }
+  

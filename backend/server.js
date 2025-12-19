@@ -25,6 +25,12 @@ app.use(express.json({ limit: "1mb" }));
 app.use("/auth", authRouter);
 app.use("/api", createMeRouter());
 
+const parseCsv = (v) =>
+  normalizeStr(v || "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
 /** ✅ 전역(공유) 데이터셋 변수: 반드시 선언되어야 함 */
 let cafes = [];
 let cafesLoadedFrom = null;
@@ -103,6 +109,17 @@ function arrayFromJson(v) {
 
 function normalizeStr(v) {
   return (v ?? "").toString().trim();
+}
+
+function sanitizeThumb(thumb) {
+  const s = normalizeStr(thumb);
+  const lower = s.toLowerCase();
+
+  if (!s || s === "\\N" || lower === "null") return null;
+  if (lower.startsWith("file://") || lower.startsWith("file:/")) return null; // file:///n/ 등 차단
+  if (/^[a-zA-Z]:\\/.test(s)) return null; // C:\... 형태 차단
+
+  return s;
 }
 
 function classifyRegionKey({ region, address }) {
@@ -225,87 +242,89 @@ async function bootstrap() {
   );
 
   /** ✅ 검색 페이지용: 목록 */
-  app.get("/api/cafes", async (req, res) => {
-    try {
-      if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
-        return res.status(503).json({ message: "DB 설정이 필요합니다." });
-      }
+app.get("/api/cafes", async (req, res) => {
+  try {
+    if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+      return res.status(503).json({ message: "DB 설정이 필요합니다." });
+    }
 
-      const region = normalizeStr(req.query.region || "all");
-      const q = normalizeStr(req.query.q || "").toLowerCase();
-      const sort = normalizeStr(req.query.sort || "relevance");
-      const themes = normalizeStr(req.query.themes || "")
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
-      const desserts = normalizeStr(req.query.desserts || "")
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+    // ✅ CSV 파싱(복수 선택 지원)
+    const regions = parseCsv(req.query.region).filter((r) => r !== "all");
+    const themes = parseCsv(req.query.themes);
+    const desserts = parseCsv(req.query.desserts);
 
-      const rows = await queryCafesWithLatestStats();
+    const q = normalizeStr(req.query.q || "").toLowerCase();
+    const sort = normalizeStr(req.query.sort || "relevance");
 
-      let items = rows.map((r) => {
-        const scoreBy = safeJsonParse(r.score_by_category_json, {});
-        const topKeywords = safeJsonParse(r.top_keywords_json, []);
-        const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
+    const rows = await queryCafesWithLatestStats();
 
-        const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
-        const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
-          topKeywords: topKeywordsArr,
-          menuTags,
-          recoTags,
-        });
+    let items = rows.map((r) => {
+      const scoreBy = safeJsonParse(r.score_by_category_json, {});
+      const topKeywords = safeJsonParse(r.top_keywords_json, []);
+      const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
 
-        const regionKey = classifyRegionKey({ region: r.region, address: r.address });
-        const thumb = firstFromJsonArray(r.images_json);
-
-        const excerpt =
-          topKeywordsArr.length > 0
-            ? `키워드: ${topKeywordsArr.slice(0, 6).join(", ")}`
-            : normalizeStr(r.address);
-
-        return {
-          id: Number(r.cafe_id),
-          name: normalizeStr(r.name),
-          region: regionKey,
-          neighborhood: neighborhoodFromAddress(r.address),
-          score: Number(r.score_total || 0) || 0,
-          rating: null,
-          reviewCount: Number(r.review_count_total || 0) || 0,
-          themes: derivedThemes,
-          desserts: derivedDesserts,
-          thumb,
-          why: topKeywordsArr.slice(0, 3),
-          excerpt,
-          _address: normalizeStr(r.address),
-          _regionText: normalizeStr(r.region),
-          _parking: parking,
-        };
+      const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
+      const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
+        topKeywords: topKeywordsArr,
+        menuTags,
+        recoTags,
       });
 
-      if (region !== "all") items = items.filter((x) => x.region === region);
+      const regionKey = classifyRegionKey({ region: r.region, address: r.address });
 
-      if (q) {
-        items = items.filter((x) => {
-          const hay = `${x.name} ${x.neighborhood} ${x.excerpt} ${x._address} ${x._regionText}`.toLowerCase();
-          return hay.includes(q);
-        });
-      }
+      // ✅ thumb 서버에서 정리 (file:// 차단)
+      const thumbRaw = firstFromJsonArray(r.images_json);
+      const thumb = sanitizeThumb(thumbRaw);
 
-      if (themes.length) items = items.filter((x) => themes.every((t) => (x.themes || []).includes(t)));
-      if (desserts.length) items = items.filter((x) => desserts.every((d) => (x.desserts || []).includes(d)));
+      const excerpt =
+        topKeywordsArr.length > 0
+          ? `키워드: ${topKeywordsArr.slice(0, 6).join(", ")}`
+          : normalizeStr(r.address);
 
-      if (sort === "score") items.sort((a, b) => (b.score || 0) - (a.score || 0));
-      if (sort === "reviews") items.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
-      if (sort === "relevance") items.sort((a, b) => (b.score || 0) - (a.score || 0));
+      return {
+        id: Number(r.cafe_id),
+        name: normalizeStr(r.name),
+        region: regionKey,
+        neighborhood: neighborhoodFromAddress(r.address),
+        score: Number(r.score_total || 0) || 0,
+        rating: null,
+        reviewCount: Number(r.review_count_total || 0) || 0,
+        themes: derivedThemes,
+        desserts: derivedDesserts,
+        thumb,
+        why: topKeywordsArr.slice(0, 3),
+        excerpt,
+        _address: normalizeStr(r.address),
+        _regionText: normalizeStr(r.region),
+        _parking: parking,
+      };
+    });
 
-      return res.json({ items });
-    } catch (e) {
-      console.error("[api/cafes]", e);
-      return res.status(500).json({ message: "카페 목록 조회 실패" });
+    // ✅ 지역: 복수 선택이면 OR (선택 지역 중 하나라도)
+    if (regions.length) items = items.filter((x) => regions.includes(x.region));
+
+    if (q) {
+      items = items.filter((x) => {
+        const hay = `${x.name} ${x.neighborhood} ${x.excerpt} ${x._address} ${x._regionText}`.toLowerCase();
+        return hay.includes(q);
+      });
     }
-  });
+
+    // ✅ themes/desserts: 복수 선택이면 OR (some)
+    //    (카테고리 간에는 AND로 조합됨: region + themes + desserts + q)
+    if (themes.length) items = items.filter((x) => themes.some((t) => (x.themes || []).includes(t)));
+    if (desserts.length) items = items.filter((x) => desserts.some((d) => (x.desserts || []).includes(d)));
+
+    if (sort === "score") items.sort((a, b) => (b.score || 0) - (a.score || 0));
+    if (sort === "reviews") items.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
+    if (sort === "relevance") items.sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    return res.json({ items });
+  } catch (e) {
+    console.error("[api/cafes]", e);
+    return res.status(500).json({ message: "카페 목록 조회 실패" });
+  }
+});
 
   /** ✅ 상세 페이지용: 단건 */
   app.get("/api/cafes/:id", async (req, res) => {
