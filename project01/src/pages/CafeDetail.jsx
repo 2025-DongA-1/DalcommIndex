@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
-import Header from "../components/Header"; // ✅ CafeDetail.jsx 위치에 따라 경로 조정 (예: "./components/Header")
+import Header from "../components/Header";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -28,7 +28,9 @@ export default function CafeDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
   const [sp] = useSearchParams();
-  const name = sp.get("name");
+
+  const [loading, setLoading] = useState(true);
+  const [cafe, setCafe] = useState(null);
 
   // ✅ 안전한 뒤로가기(히스토리 없으면 홈으로)
   const goBack = () => {
@@ -36,38 +38,76 @@ export default function CafeDetail() {
     else navigate("/");
   };
 
-  // ✅ (임시 데이터) — 나중에 DB/API로 교체
-  const cafe = useMemo(
-    () => ({
-      id: id || null,
-      name: name || (id ? `카페 ${id}` : "카페 이름"),
-      region: "나주",
-      category: "디저트 카페",
-      reviewCount: 0,
-      photos: [], // ["https://...","https://..."]
-      address: "",
-      phone: "전화 정보 없음",
-      hours: "영업시간 정보 없음",
-      parking: "정보 없음",
-      mainMenu: "대표메뉴 정보 없음",
-      atmosphere: "분위기 정보 없음",
-      tags: ["감성", "조용한", "디저트"],
-      mapUrl: "",
-      wordcloudUrl: "",
-      scores: { taste: 0, mood: 0, price: 0, revisit: 0 },
-      score: "-",
-    }),
-    [id, name]
-  );
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const data = await apiFetch(`/api/cafes/${id}`);
+        if (!alive) return;
+        setCafe(data.cafe);
+      } catch (e) {
+        console.error(e);
+        if (!alive) return;
+        alert(e.message || "카페 상세 조회 실패");
+        navigate("/search");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [id, navigate]);
 
-  const reviews = []; // [{id:1, user:"홍길동", date:"2025.12.18", text:"좋아요", rating:5}]
+  const detail = useMemo(() => {
+    if (!cafe) return null;
+
+    const category = "디저트 카페";
+    const tags = Array.isArray(cafe.tags) ? cafe.tags : [];
+
+    // 화면에 쓸 텍스트 정리
+    const mainMenu = cafe.mainMenu || "대표메뉴 정보 없음";
+    const atmosphere = cafe.atmosphere || "분위기 정보 없음";
+    const parking = cafe.parking || "주차 정보 없음";
+
+    return {
+      ...cafe,
+      category,
+      tags,
+      mainMenu,
+      atmosphere,
+      parking,
+      reviewCount: cafe.reviewCount ?? 0,
+      score: cafe.score ?? 0,
+      photos: Array.isArray(cafe.photos) ? cafe.photos : [],
+      mapUrl: cafe.mapUrl || "",
+    };
+  }, [cafe]);
+
+  const reviews = []; // 차후 reviews 테이블 연결 시 구현
+
+  if (loading) {
+    return (
+      <div className="cfd-page">
+        <Header />
+        <main className="cfd-wrap">
+          <div style={{ padding: 24 }}>로딩 중...</div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!detail) return null;
+
+  const favoriteCafeId = Number(detail.cafe_id ?? detail.id);
 
   return (
     <div className="cfd-page">
       <Header />
 
       <main className="cfd-wrap">
-        {/* ✅ 상단: 뒤로 + 카페명(좌측 정렬로 자연스럽게) + 우측 액션 */}
+        {/* 상단 */}
         <section className="cfd-top">
           <div className="cfd-top-left">
             <button type="button" className="cfd-back" onClick={goBack}>
@@ -75,26 +115,22 @@ export default function CafeDetail() {
             </button>
 
             <div className="cfd-titleBox">
-              <div className="cfd-title">{cafe?.name || "카페 이름"}</div>
+              <div className="cfd-title">{detail.name || "카페 이름"}</div>
               <div className="cfd-sub">
-                <span className="cfd-pill">{cafe?.region || "지역"}</span>
+                <span className="cfd-pill">{detail.region || "지역"}</span>
                 <span className="cfd-dot">·</span>
-                <span className="cfd-pill cfd-pill-ghost">{cafe?.category || "카페/디저트"}</span>
+                <span className="cfd-pill cfd-pill-ghost">{detail.category}</span>
                 <span className="cfd-dot">·</span>
-                <span className="cfd-subText">리뷰 {cafe?.reviewCount ?? 0}</span>
+                <span className="cfd-subText">리뷰 {detail.reviewCount ?? 0}</span>
               </div>
             </div>
           </div>
 
           <div className="cfd-top-right">
-            <button
-              type="button"
-              className="cfd-action"
-              onClick={() => navigate("/map")}
-              title="지도에서 보기"
-            >
+            <button type="button" className="cfd-action" onClick={() => navigate("/map")} title="지도에서 보기">
               지도
             </button>
+
             <button
               type="button"
               className="cfd-action cfd-action-primary"
@@ -103,9 +139,8 @@ export default function CafeDetail() {
                 const token = localStorage.getItem("accessToken");
                 if (!token) return navigate("/login");
 
-                const cafeId = Number(cafe?.cafe_id ?? cafe?.id);
-                if (!Number.isFinite(cafeId)) {
-                  alert("즐겨찾기는 cafe_id(숫자)가 필요합니다. (현재 상세페이지가 임시 데이터입니다)");
+                if (!Number.isFinite(favoriteCafeId)) {
+                  alert("즐겨찾기 저장을 위해 cafe_id(숫자)가 필요합니다.");
                   return;
                 }
 
@@ -113,10 +148,11 @@ export default function CafeDetail() {
                   await apiFetch("/api/me/favorites", {
                     method: "POST",
                     body: {
-                      cafe_id: cafeId,
-                      name: cafe.name,
-                      region: cafe.region,
-                      tags: cafe.tags,
+                      cafe_id: favoriteCafeId,
+                      // json fallback 모드일 때만 사용(테이블 모드에서는 무시됨)
+                      name: detail.name,
+                      region: detail.region,
+                      tags: detail.tags,
                     },
                   });
                   alert("즐겨찾기에 저장했습니다.");
@@ -131,7 +167,7 @@ export default function CafeDetail() {
           </div>
         </section>
 
-        {/* ✅ 본문 그리드 */}
+        {/* 본문 그리드 */}
         <div className="cfd-grid">
           {/* 왼쪽 */}
           <div className="cfd-col">
@@ -143,7 +179,7 @@ export default function CafeDetail() {
               </div>
 
               <div className="cfd-photoGrid">
-                {(cafe?.photos?.length ? cafe.photos : new Array(4).fill(null)).map((url, i) => (
+                {(detail.photos.length ? detail.photos : new Array(4).fill(null)).map((url, i) => (
                   <div key={i} className="cfd-photo">
                     {url ? (
                       <img src={url} alt={`cafe-${i}`} className="cfd-photoImg" />
@@ -154,9 +190,9 @@ export default function CafeDetail() {
                 ))}
               </div>
 
-              {Array.isArray(cafe?.tags) && cafe.tags.length > 0 && (
+              {Array.isArray(detail.tags) && detail.tags.length > 0 && (
                 <div className="cfd-chipRow">
-                  {cafe.tags.map((t) => (
+                  {detail.tags.map((t) => (
                     <span key={t} className="cfd-chip">
                       #{t}
                     </span>
@@ -172,13 +208,20 @@ export default function CafeDetail() {
               </div>
 
               <div className="cfd-infoGrid">
-                <InfoRow label="주소" value={cafe?.address || "주소 정보 없음"} />
-                <InfoRow label="전화" value={cafe?.phone || "전화 정보 없음"} />
-                <InfoRow label="영업시간" value={cafe?.hours || "영업시간 정보 없음"} />
-                <InfoRow label="주차" value={cafe?.parking || "주차 정보 없음"} />
-                <InfoRow label="대표메뉴" value={cafe?.mainMenu || "대표메뉴 정보 없음"} />
-                <InfoRow label="분위기" value={cafe?.atmosphere || "분위기 정보 없음"} />
+                <InfoRow label="주소" value={detail.address || "주소 정보 없음"} />
+                <InfoRow label="지도" value={detail.mapUrl ? "지도 링크 있음" : "지도 링크 없음"} />
+                <InfoRow label="주차" value={detail.parking || "주차 정보 없음"} />
+                <InfoRow label="대표메뉴" value={detail.mainMenu || "대표메뉴 정보 없음"} />
+                <InfoRow label="분위기" value={detail.atmosphere || "분위기 정보 없음"} />
               </div>
+
+              {detail.mapUrl ? (
+                <div style={{ marginTop: 10 }}>
+                  <a href={detail.mapUrl} target="_blank" rel="noreferrer" className="cfd-btn">
+                    지도 링크 열기
+                  </a>
+                </div>
+              ) : null}
             </section>
 
             {/* 리뷰 */}
@@ -218,25 +261,46 @@ export default function CafeDetail() {
               <div className="cfd-summary">
                 <div className="cfd-score">
                   <span className="cfd-scoreStar">★</span>
-                  <span className="cfd-scoreText">점수</span>
-                  <span className="cfd-scoreVal">{cafe?.score ?? "-"}</span>
+                  <span className="cfd-scoreText">달콤지수</span>
+                  <span className="cfd-scoreVal">{Math.round(Number(detail.score || 0))}</span>
                 </div>
 
                 <div className="cfd-subCard">
                   <div className="cfd-subCardTitle">워드클라우드</div>
-                  {cafe?.wordcloudUrl ? (
-                    <img src={cafe.wordcloudUrl} alt="wordcloud" className="cfd-wordcloud" />
-                  ) : (
-                    <div className="cfd-subPh">(추후) 워드클라우드 이미지 표시</div>
-                  )}
+                  <div className="cfd-subPh">(추후) 워드클라우드 이미지 표시</div>
                 </div>
 
                 <div className="cfd-subCard">
                   <div className="cfd-subCardTitle">키워드 요약</div>
-                  <ScoreRow label="맛" value={cafe?.scores?.taste ?? 0} />
-                  <ScoreRow label="분위기" value={cafe?.scores?.mood ?? 0} />
-                  <ScoreRow label="가격" value={cafe?.scores?.price ?? 0} />
-                  <ScoreRow label="재방문" value={cafe?.scores?.revisit ?? 0} />
+
+                  <MiniRow label="최근 언급" value={detail.lastMentionedAt ? String(detail.lastMentionedAt).slice(0, 19) : "정보 없음"} />
+                  <MiniRow label="최근 리뷰" value={`${detail.reviewCountRecent ?? 0}개`} />
+                  <MiniRow label="주차" value={detail.parking || "정보 없음"} />
+
+                  <div style={{ height: 10 }} />
+
+                  <div style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>Top 키워드</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {(detail.topKeywords || detail.tags || []).slice(0, 10).map((k) => (
+                      <span key={k} className="cfd-chip">
+                        #{k}
+                      </span>
+                    ))}
+                  </div>
+
+                  <div style={{ height: 10 }} />
+
+                  <div style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>메뉴 태그</div>
+                  <div style={{ fontSize: 13, color: "#333", lineHeight: 1.5 }}>
+                    {(detail.menuTags || []).slice(0, 12).join(", ") || "정보 없음"}
+                  </div>
+
+                  <div style={{ height: 10 }} />
+
+                  <div style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>추천 태그</div>
+                  <div style={{ fontSize: 13, color: "#333", lineHeight: 1.5 }}>
+                    {(detail.recoTags || []).slice(0, 12).join(", ") || "정보 없음"}
+                  </div>
                 </div>
               </div>
             </section>
@@ -256,18 +320,11 @@ function InfoRow({ label, value }) {
   );
 }
 
-function ScoreRow({ label, value }) {
-  const v = Number(value) || 0;
-  const pct = Math.max(0, Math.min(100, (v / 5) * 100));
+function MiniRow({ label, value }) {
   return (
-    <div className="cfd-scoreRow">
-      <div className="cfd-scoreRowTop">
-        <span>{label}</span>
-        <span>{v.toFixed(1)} / 5</span>
-      </div>
-      <div className="cfd-bar">
-        <div className="cfd-barFill" style={{ width: `${pct}%` }} />
-      </div>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, marginTop: 6 }}>
+      <span style={{ color: "#666" }}>{label}</span>
+      <span style={{ color: "#222", fontWeight: 600 }}>{value}</span>
     </div>
   );
 }

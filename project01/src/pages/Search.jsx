@@ -3,9 +3,27 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import "../styles/Search.css";
 
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const token = localStorage.getItem("accessToken");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
-
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || "요청 실패");
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
 
 const REGION_OPTIONS = [
   { value: "all", label: "전체" },
@@ -28,62 +46,34 @@ const THEME_OPTIONS = [
   { key: "cake", label: "주문 케이크" },
 ];
 
-const DESSERT_OPTIONS = [
-  "케이크",
-  "마카롱",
-  "말차",
-  "소금빵",
-  "크로플",
-  "휘낭시에",
-  "빙수",
-  "푸딩",
-];
+const DESSERT_OPTIONS = ["케이크", "마카롱", "말차", "소금빵", "크로플", "휘낭시에", "빙수", "푸딩"];
 
-// ✅ 임시 mock 데이터 (나중에 API로 교체)
-const MOCK = [
-  {
-    id: 1,
-    name: "스윗라운지",
-    region: "dong-gu",
-    neighborhood: "동명동",
-    score: 87, // 달콤 인덱스(임의)
-    rating: 4.6,
-    reviewCount: 214,
-    themes: ["photo", "dessert"],
-    desserts: ["케이크", "말차", "휘낭시에"],
-    thumb: "/main/dong-gu.jpg",
-    why: ["말차 진함", "크림 밸런스", "자연광 포토존"],
-    excerpt: "말차 향이 진하고 크림이 무겁지 않아서 계속 먹게 돼요…",
-  },
-  {
-    id: 2,
-    name: "베이크하우스 197",
-    region: "gwangsan-gu",
-    neighborhood: "수완지구",
-    score: 82,
-    rating: 4.4,
-    reviewCount: 158,
-    themes: ["study", "dessert"],
-    desserts: ["소금빵", "크로플"],
-    thumb: "/main/gwangsan-gu.jpg",
-    why: ["좌석 넓음", "콘센트", "빵 라인업"],
-    excerpt: "자리 넉넉하고 콘센트 많아서 작업하기 좋아요…",
-  },
-];
+function fallbackThumb(regionKey) {
+  // 기존 Search MOCK에서 쓰던 이미지 경로와 맞춤
+  if (regionKey === "dong-gu") return "/main/dong-gu.jpg";
+  if (regionKey === "nam-gu") return "/main/nam-gu.jpg";
+  if (regionKey === "buk-gu") return "/main/buk-gu.jpg";
+  if (regionKey === "seo-gu") return "/main/seo-gu.jpg";
+  if (regionKey === "gwangsan-gu") return "/main/gwangsan-gu.jpg";
+  if (regionKey === "hwasun") return "/main/hwasun.jpg";
+  if (regionKey === "damyang") return "/main/damyang.jpg";
+  if (regionKey === "naju") return "/main/naju.jpg";
+  return "/main/gwangsan-gu.jpg";
+}
 
 export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
 
   // URL -> 초기값
- const initialRegions = (sp.get("regions") ?? "").split(",").filter(Boolean);
+  const initialRegion = sp.get("region") ?? "all";
   const initialQ = sp.get("q") ?? "";
   const initialSort = sp.get("sort") ?? "relevance"; // relevance | score | rating | reviews
   const initialThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
   const initialDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
 
   // 폼 상태
-  const [regions, setRegions] = useState(initialRegions);
+  const [region, setRegion] = useState(initialRegion);
   const [q, setQ] = useState(initialQ);
   const [sort, setSort] = useState(initialSort);
   const [themes, setThemes] = useState(initialThemes);
@@ -95,7 +85,7 @@ export default function Search() {
 
   // ✅ URL 변경 시 폼 상태도 동기화 (뒤로가기/앞으로가기 대응)
   useEffect(() => {
-    setRegions((sp.get("regions") ?? "").split(",").filter(Boolean));
+    setRegion(sp.get("region") ?? "all");
     setQ(sp.get("q") ?? "");
     setSort(sp.get("sort") ?? "relevance");
     setThemes((sp.get("themes") ?? "").split(",").filter(Boolean));
@@ -105,13 +95,13 @@ export default function Search() {
   const pushParams = (next) => {
     const params = new URLSearchParams();
 
-    const nextRegions = next.regions ?? regions;
+    const nextRegion = next.region ?? region;
     const nextQ = (next.q ?? q).trim();
     const nextSort = next.sort ?? sort;
     const nextThemes = next.themes ?? themes;
     const nextDesserts = next.desserts ?? desserts;
 
-    if (nextRegions?.length) params.set("regions", nextRegions.join(","));
+    if (nextRegion !== "all") params.set("region", nextRegion);
     if (nextQ) params.set("q", nextQ);
     if (nextSort) params.set("sort", nextSort);
     if (nextThemes?.length) params.set("themes", nextThemes.join(","));
@@ -125,56 +115,67 @@ export default function Search() {
     pushParams({});
   };
 
-  // URL 변경 -> fetch (현재는 mock 필터링)
+  // ✅ URL 변경 -> DB API 호출
   useEffect(() => {
-    setLoading(true);
+    const controller = new AbortController();
+    let alive = true;
 
-    const urlRegions = (sp.get("regions") ?? "").split(",").filter(Boolean);
-    const urlQ = (sp.get("q") ?? "").trim().toLowerCase();
+    const urlRegion = sp.get("region") ?? "all";
+    const urlQ = (sp.get("q") ?? "").trim();
     const urlSort = sp.get("sort") ?? "relevance";
     const urlThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
     const urlDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
 
-    let arr = [...MOCK];
+    (async () => {
+      try {
+        setLoading(true);
 
-    if (urlRegions.length) {
-  arr = arr.filter((x) => urlRegions.includes(x.region));
-}
-    
-    if (urlQ) {
-      arr = arr.filter((x) => {
-        const hay = `${x.name} ${x.neighborhood} ${x.why.join(" ")} ${x.desserts.join(" ")}`.toLowerCase();
-        return hay.includes(urlQ);
-      });
-    }
+        const params = new URLSearchParams();
+        if (urlRegion !== "all") params.set("region", urlRegion);
+        if (urlQ) params.set("q", urlQ);
+        if (urlSort) params.set("sort", urlSort);
+        if (urlThemes.length) params.set("themes", urlThemes.join(","));
+        if (urlDesserts.length) params.set("desserts", urlDesserts.join(","));
 
-    if (urlThemes.length) {
-      arr = arr.filter((x) => urlThemes.every((t) => x.themes.includes(t)));
-    }
+        const qs = params.toString();
+        const data = await apiFetch(`/api/cafes${qs ? `?${qs}` : ""}`);
 
-    if (urlDesserts.length) {
-      arr = arr.filter((x) => urlDesserts.every((d) => x.desserts.includes(d)));
-    }
+        if (!alive) return;
 
-    if (urlSort === "score") arr.sort((a, b) => b.score - a.score);
-    if (urlSort === "rating") arr.sort((a, b) => b.rating - a.rating);
-    if (urlSort === "reviews") arr.sort((a, b) => b.reviewCount - a.reviewCount);
+        const items = Array.isArray(data.items) ? data.items : [];
+        // thumb fallback + 안전 보정
+        const normalized = items.map((x) => ({
+          ...x,
+          thumb: x.thumb || fallbackThumb(x.region),
+          rating: x.rating ?? null,
+          reviewCount: x.reviewCount ?? 0,
+          why: Array.isArray(x.why) ? x.why : [],
+          excerpt: x.excerpt || "",
+          neighborhood: x.neighborhood || "",
+          score: Number(x.score || 0) || 0,
+        }));
 
-    const t = setTimeout(() => {
-      setResults(arr);
-      setLoading(false);
-    }, 200);
+        setResults(normalized);
+      } catch (e) {
+        if (!alive) return;
+        setResults([]);
+        // 503(DB 미설정) 등은 사용자에게 명확히 보여주는 편이 좋음
+        console.error(e);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
 
-    return () => clearTimeout(t);
+    return () => {
+      alive = false;
+      controller.abort();
+    };
   }, [sp]);
 
-const regionLabels = useMemo(() => {
-  const rs = (sp.get("regions") ?? "").split(",").filter(Boolean);
-  if (!rs.length) return ["전체"];
-
-  return rs.map((v) => REGION_OPTIONS.find((o) => o.value === v)?.label || v);
-}, [sp]);
-
+  const regionLabel = useMemo(() => {
+    const r = sp.get("region") ?? "all";
+    return REGION_OPTIONS.find((x) => x.value === r)?.label ?? "전체";
+  }, [sp]);
 
   const summaryQ = sp.get("q") ?? "";
   const count = results.length;
@@ -187,25 +188,22 @@ const regionLabels = useMemo(() => {
     setDesserts((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
 
-  const toggleRegion = (val) => {
-  setRegions((prev) =>
-    prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]
-  );
-};
-
   const resetFilters = () => {
-    
     // 지역/검색어는 유지하고, 필터/정렬만 초기화
-    const keepRegions = regions;
+    const keepRegion = region;
     const keepQ = q;
 
-    setRegions([]);          // 지역 체크 해제(= 전체)
-    setQ("");
     setSort("relevance");
     setThemes([]);
     setDesserts([]);
 
-    
+    pushParams({
+      region: keepRegion,
+      q: keepQ,
+      sort: "relevance",
+      themes: [],
+      desserts: [],
+    });
   };
 
   return (
@@ -218,34 +216,36 @@ const regionLabels = useMemo(() => {
           <div className="sr-title">
             <h1>검색 결과</h1>
             <p className="sr-summary">
-  {regionLabels.map((label) => (
-    <span key={label} className="pill">
-      {label}
-    </span>
-  ))}
-
-  {summaryQ ? (
-    <>
-      <span className="dot">·</span>
-      <span className="pill">“{summaryQ}”</span>
-    </>
-  ) : null}
-
-  <span className="dot">·</span>
-  <span className="count">{count}개</span>
-</p>
-
+              <span className="pill">{regionLabel}</span>
+              {summaryQ ? (
+                <>
+                  <span className="dot">·</span>
+                  <span className="pill">“{summaryQ}”</span>
+                </>
+              ) : null}
+              <span className="dot">·</span>
+              <span className="count">{count}개</span>
+            </p>
           </div>
 
           <form className="sr-search" onSubmit={applySearch}>
-
+            <label className="sr-field">
+              <span className="sr-label">지역</span>
+              <select value={region} onChange={(e) => setRegion(e.target.value)}>
+                {REGION_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="sr-field grow">
               <span className="sr-label">검색</span>
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="카페명/동네/디저트 키워드"
+                placeholder="카페명/주소/키워드"
               />
             </label>
 
@@ -254,7 +254,6 @@ const regionLabels = useMemo(() => {
               <select value={sort} onChange={(e) => setSort(e.target.value)}>
                 <option value="relevance">관련도</option>
                 <option value="score">달콤지수 높은 순</option>
-                <option value="rating">평점 높은 순</option>
                 <option value="reviews">리뷰 많은 순</option>
               </select>
             </label>
@@ -269,9 +268,6 @@ const regionLabels = useMemo(() => {
       {/* 본문: 필터 + 결과 */}
       <main className="sr-container sr-body">
         <aside className="sr-filters">
-      
-
-
           <div className="box">
             <div className="box-head">
               <h2>필터</h2>
@@ -280,38 +276,7 @@ const regionLabels = useMemo(() => {
               </button>
             </div>
 
-            {/* ✅ 지역 */}
-<div className="filter-block">
-  <div className="filter-title">지역</div>
-
-  <div className="check-list">
-    {/* 전체(= regions 비우기) */}
-    <label className="check">
-      <input
-        type="checkbox"
-        checked={regions.length === 0}
-        onChange={() => setRegions([])}
-      />
-      <span>전체</span>
-    </label>
-
-    {/* 나머지 지역 */}
-    {REGION_OPTIONS.filter((r) => r.value !== "all").map((r) => (
-      <label key={r.value} className="check">
-        <input
-          type="checkbox"
-          checked={regions.includes(r.value)}
-          onChange={() => toggleRegion(r.value)}
-        />
-        <span>{r.label}</span>
-      </label>
-    ))}
-  </div>
-  </div>
-
-
-
-          <div className="filter-block"></div>
+            <div className="filter-block">
               <div className="filter-title">테마</div>
               <div className="check-list">
                 {THEME_OPTIONS.map((t) => (
@@ -325,7 +290,8 @@ const regionLabels = useMemo(() => {
                   </label>
                 ))}
               </div>
-            
+            </div>
+
             <div className="filter-block">
               <div className="filter-title">디저트</div>
               <div className="chips">
@@ -381,27 +347,25 @@ const regionLabels = useMemo(() => {
                       <div className="name">{x.name}</div>
                       <div className="score">
                         <span className="badge">달콤지수</span>
-                        <span className="score-num">{x.score}</span>
+                        <span className="score-num">{Math.round(x.score)}</span>
                       </div>
                     </div>
 
                     <div className="row2">
-                      <span className="place">{x.neighborhood}</span>
-                      <span className="dot">·</span>
-                      <span className="meta">평점 {x.rating}</span>
+                      <span className="place">{x.neighborhood || "지역 정보"}</span>
                       <span className="dot">·</span>
                       <span className="meta">리뷰 {x.reviewCount}개</span>
                     </div>
 
                     <div className="why">
-                      {x.why.slice(0, 3).map((w) => (
+                      {(x.why || []).slice(0, 3).map((w) => (
                         <span key={w} className="tag">
                           {w}
                         </span>
                       ))}
                     </div>
 
-                    <div className="excerpt">“{x.excerpt}”</div>
+                    <div className="excerpt">{x.excerpt ? `“${x.excerpt}”` : "“키워드 분석 중”"}</div>
                   </div>
                 </button>
               ))}
