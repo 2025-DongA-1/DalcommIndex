@@ -2074,3 +2074,365 @@ footer {
   border-color: #ff6b83;
   color: #fff;
 }
+
+/* =========================
+   PlacePopup - KakaoMap style (pp- prefix)
+   아래를 style.css 맨 아래에 추가
+========================= */
+
+.place-modal-backdrop{
+  align-items: flex-end;            /* ✅ 하단 시트 느낌 */
+  padding: 90px 12px 12px;
+}
+
+.place-modal.pp-sheet{
+  width: min(420px, 96vw);
+  border-radius: 18px;
+  max-height: calc(100vh - 110px);
+  overflow: hidden;
+}
+
+.pp-handle{
+  width: 52px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.12);
+  margin: 10px auto 8px;
+}
+
+.pp-hero{
+  position: relative;
+  padding: 0 12px 10px;
+}
+
+.pp-close{
+  position: absolute;
+  top: 8px;
+  right: 18px;
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: rgba(0,0,0,0.22);
+  color: #fff;
+  font-size: 16px;
+}
+.pp-close:hover{ background: rgba(0,0,0,0.3); }
+
+.pp-photoGrid{
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+  height: 190px;
+}
+
+.pp-photo{
+  border-radius: 14px;
+  overflow: hidden;
+  background: #f3f4f6;
+  border: 1px solid rgba(0,0,0,0.06);
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.pp-photoMain{ height: 190px; }
+.pp-photoCol{
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  height: 190px;
+}
+
+.pp-photoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pp-photoPh{
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.pp-moreBadge{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.35);
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.pp-body{
+  padding: 12px 14px 14px;
+  overflow: auto;
+}
+
+.pp-titleArea{
+  margin-bottom: 10px;
+}
+
+.pp-title{
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: -0.2px;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.pp-score{
+  font-size: 13px;
+  font-weight: 800;
+  opacity: 0.85;
+}
+
+.pp-sub{
+  margin-top: 6px;
+  font-size: 12px;
+  color: #6b7280;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.pp-subItem{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pp-routeRow{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 10px 0 10px;
+}
+
+.pp-routeBtn{
+  text-align: center;
+  padding: 10px 0;
+  border-radius: 999px;
+  font-weight: 800;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #111827;
+}
+
+.pp-routeBtn.primary{
+  background: #2f80ed;
+  border-color: #2f80ed;
+  color: #fff;
+}
+
+.pp-routeBtn.ghost{
+  background: #f3f4f6;
+}
+
+.pp-miniActions{
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pp-miniBtn{
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+}
+
+.pp-miniBtn span{
+  font-size: 11px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.pp-miniBtn.is-on{
+  border-color: #ff4b82;
+  background: #ffeff5;
+}
+
+.pp-tabs{
+  display: flex;
+  gap: 12px;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+
+.pp-tab{
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 2px;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.pp-tab.active{
+  color: #111827;
+  position: relative;
+}
+.pp-tab.active::after{
+  content:"";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -8px;
+  height: 3px;
+  border-radius: 999px;
+  background: #111827;
+}
+
+.pp-chipRow{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 10px;
+}
+
+.pp-chip{
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  border: 1px solid rgba(0,0,0,0.06);
+  font-size: 12px;
+  color: #374151;
+  font-weight: 700;
+}
+
+.pp-desc{
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.pp-infoBox{
+  margin-top: 10px;
+  border: 1px solid rgba(0,0,0,0.06);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.pp-info-row{
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(0,0,0,0.08);
+}
+.pp-info-row:last-child{ border-bottom: 0; }
+
+.pp-info-label{
+  width: 64px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #9ca3af;
+  font-weight: 800;
+}
+
+.pp-info-value{
+  flex: 1;
+  font-size: 12px;
+  color: #111827;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.pp-link{
+  text-decoration: underline;
+}
+
+.pp-moreBtn{
+  margin-top: 10px;
+  width: 100%;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: #fafafa;
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.pp-bottomActions{
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+}
+
+.pp-mainBtn{
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: #ff4b82;
+  color: #fff;
+  padding: 12px 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.pp-tabBox{
+  margin-top: 10px;
+}
+
+.pp-tabTitle{
+  font-weight: 900;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.pp-tabText{
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.pp-outlineBtn{
+  margin-top: 10px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: #fff;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.pp-photoAll{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pp-photoThumb{
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(0,0,0,0.06);
+  background: #f3f4f6;
+  aspect-ratio: 1 / 1;
+}
+
+.place-modal-backdrop { pointer-events: none; }
+.place-modal-backdrop .place-modal { pointer-events: auto; }
+
+.place-modal-backdrop { pointer-events: none; }
+.place-modal-backdrop .place-modal { pointer-events: auto; }

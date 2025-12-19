@@ -1,26 +1,82 @@
 // Map.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import KakaoMap from "../components/KakaoMap";
 import PlacePopup from "../components/PlacePopup";
 
-function Map() {
+const STORE_KEY = "dalcomm_map_state_v1";
+const VIEW_KEY = "dalcomm_map_view_v1";
+const KEEP_KEY = "dalcomm_keep_map_state_v1";
+
+
+function safeParse(json) {
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function compactCafe(c) {
+  if (!c) return c;
+  return {
+    id: c.id ?? c.cafe_id ?? c.cafeId ?? c.cafeID ?? null,
+    name: c.name,
+    address: c.address,
+    region: c.region,
+    x: c.x,
+    y: c.y,
+    url: c.url,
+
+    score: c.score,
+
+    phone: c.phone ?? c.tel ?? c.telephone ?? c.contact ?? "",
+    homepage: c.homepage ?? c.site ?? c.website ?? "",
+    hours: c.hours ?? c.open_hours ?? c.openTime ?? c.time ?? "",
+
+    atmosphere: c.atmosphere,
+    atmosphere_norm: c.atmosphere_norm,
+    purpose: c.purpose,
+    purpose_norm: c.purpose_norm,
+    taste: c.taste,
+    taste_norm: c.taste_norm,
+    parking: c.parking,
+
+    content: c.content,
+    summary: c.summary,
+    desc: c.desc,
+
+    images:
+      c.imageUrls ??
+      c.images ??
+      c.image_url ??
+      c.img_url ??
+      c.img ??
+      c.photo ??
+      c.photos ??
+      "",
+  };
+}
+
+export default function Map() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchResults, setSearchResults] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(null);
 
-  // 검색 실행 여부 (검색 전엔 결과 패널 숨김)
   const [hasSearched, setHasSearched] = useState(false);
-
-  // 상단 검색바 입력값
   const [topQuery, setTopQuery] = useState("");
 
-  // ✅ 상세 모달 (좌표 pos 제거)
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupPlace, setPopupPlace] = useState(null);
 
-  // 백엔드 주소
+  // ✅ 지도 뷰/자동 bounds 제어
+  const [initialView, setInitialView] = useState(null);
+  const [fitBoundsOnResults, setFitBoundsOnResults] = useState(false);
+
+  // ✅ “복구 중 저장 방지” 플래그
+  const restoringRef = useRef(true);
+
   const API_BASE = import.meta.env.VITE_API_BASE || "";
   const filterUrl = API_BASE ? `${API_BASE}/filter` : "/filter";
 
@@ -36,7 +92,6 @@ function Map() {
     setPopupPlace(null);
   };
 
-  // 카드에 보여줄 간단 태그 문자열
   const getTagLine = (cafe) => {
     const atmos = cafe?.atmosphere || cafe?.atmosphere_norm || "";
     const purpose = cafe?.purpose || cafe?.purpose_norm || "";
@@ -49,11 +104,72 @@ function Map() {
   };
 
   const visibleCount = useMemo(() => {
-    // 좌표 있는 것만 카운트(지도 마커 표시용)
-    return searchResults.filter((c) => c && c.x && c.y).length;
+    return (searchResults || []).filter((c) => c && c.x && c.y).length;
   }, [searchResults]);
 
-  // 공통 검색 호출
+  // ✅ 최초 진입/뒤로가기 복구: useLayoutEffect로 “먼저” 복구해서
+  //    빈 state가 저장되어 덮이는 문제를 막습니다.
+  useLayoutEffect(() => {
+    const savedState = safeParse(sessionStorage.getItem(STORE_KEY));
+    const savedView = safeParse(sessionStorage.getItem(VIEW_KEY));
+
+    if (savedState) {
+      setIsSidebarOpen(savedState.isSidebarOpen ?? true);
+      setSearchResults(savedState.searchResults ?? []);
+      setFocusedIndex(savedState.focusedIndex ?? null);
+      setHasSearched(!!savedState.hasSearched);
+      setTopQuery(savedState.topQuery ?? "");
+    }
+
+    if (savedView && typeof savedView.lat === "number" && typeof savedView.lng === "number") {
+      setInitialView(savedView);
+      setFitBoundsOnResults(false);
+    } else {
+      if (savedState?.searchResults?.length) setFitBoundsOnResults(true);
+    }
+
+    restoringRef.current = false;
+  }, []);
+
+  // ✅ 상태 변경 시 저장 (복구 끝난 뒤에만)
+  useEffect(() => {
+    if (restoringRef.current) return;
+    try {
+      const payload = {
+        isSidebarOpen,
+        hasSearched,
+        topQuery,
+        focusedIndex,
+        searchResults: (searchResults || []).map(compactCafe),
+      };
+      sessionStorage.setItem(STORE_KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn("[Map] sessionStorage save failed:", e);
+    }
+  }, [isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults]);
+
+  useEffect(() => {
+    return () => {
+      // ✅ 상세페이지로 이동한 경우(플래그가 있으면) 유지
+      const keep = sessionStorage.getItem(KEEP_KEY) === "1";
+      if (keep) {
+        sessionStorage.removeItem(KEEP_KEY); // 1회성 플래그라서 바로 제거
+        return;
+      }
+
+      // ✅ 그 외(메인으로 이동 등) -> 지도페이지 초기화
+      sessionStorage.removeItem(STORE_KEY);
+      sessionStorage.removeItem(VIEW_KEY);
+    };
+  }, []);
+
+  // ✅ 지도 뷰 저장 콜백
+  const handleViewChange = (view) => {
+    try {
+      sessionStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch {}
+  };
+
   const handleSearch = async (prefs) => {
     try {
       const res = await fetch(filterUrl, {
@@ -67,11 +183,11 @@ function Map() {
       const data = await res.json();
       setSearchResults(data.results || []);
       setFocusedIndex(null);
-
-      // 검색 실행 완료 표시
       setHasSearched(true);
 
-      // 검색 새로 하면 떠있는 상세는 닫기(원하시면 제거 가능)
+      // ✅ 새 검색이면 bounds로 한 번 맞춤
+      setFitBoundsOnResults(true);
+
       closePopup();
     } catch (err) {
       console.error(err);
@@ -79,7 +195,6 @@ function Map() {
     }
   };
 
-  // 상단 검색바: 지역/키워드 단순 분해
   const handleTopSearch = async () => {
     const q = (topQuery || "").trim();
     if (!q) return;
@@ -93,7 +208,6 @@ function Map() {
     });
     keyword = keyword.replace(/\s+/g, " ").trim();
 
-    // 대표 키워드 1개만 사용
     let menuKeyword = "";
     if (keyword) {
       const tokens = keyword.split(/\s+/).filter(Boolean);
@@ -112,6 +226,14 @@ function Map() {
     await handleSearch(prefs);
   };
 
+  const selectedId =
+    popupPlace?.id ??
+    popupPlace?.cafe_id ??
+    popupPlace?.cafeId ??
+    popupPlace?.cafeID ??
+    popupPlace?.name ??
+    null;
+
   return (
     <div className="app-container">
       <Header />
@@ -126,6 +248,8 @@ function Map() {
             setFocusedIndex(null);
             setHasSearched(false);
             closePopup();
+            sessionStorage.removeItem(STORE_KEY);
+            sessionStorage.removeItem(VIEW_KEY);
           }}
         />
 
@@ -136,7 +260,6 @@ function Map() {
             </button>
           )}
 
-          {/* 상단 검색바 */}
           <div className="map-search-bar">
             <div className="map-search-input-wrap">
               <input
@@ -162,20 +285,24 @@ function Map() {
             </button>
           </div>
 
-          {/* 지도 + 결과 패널 */}
           <div className="map-split-layout">
             <div className="map-area" style={{ position: "relative" }}>
               <KakaoMap
                 results={searchResults}
                 focusedIndex={focusedIndex}
                 setFocusedIndex={setFocusedIndex}
+                onSelectPlace={(place) => openPopup(place)}
+                initialView={initialView}
+                onViewChange={handleViewChange}
+                fitBoundsOnResults={fitBoundsOnResults}
+                onFitBoundsDone={() => setFitBoundsOnResults(false)}
+                relayoutKey={popupOpen}
+                selectedId={selectedId}
               />
 
-              {/* ✅ 상세는 “가운데 모달” */}
               <PlacePopup open={popupOpen} place={popupPlace} onClose={closePopup} />
             </div>
 
-            {/* 검색 전엔 렌더링 안 함 */}
             {hasSearched && (
               <div className="results-panel">
                 <div className="results-panel-header">
@@ -201,11 +328,8 @@ function Map() {
                           type="button"
                           className={`result-card ${isActive ? "active" : ""}`}
                           onClick={() => {
-                            // 좌표가 있으면 지도 포커스 이동(마커 중심 이동)
                             if (hasCoord) setFocusedIndex(idx);
                             else setFocusedIndex(null);
-
-                            // ✅ 상세는 항상 모달로 띄움(좌표 없어도 OK)
                             openPopup(cafe);
                           }}
                           title="클릭하면 상세가 뜹니다"
@@ -252,11 +376,8 @@ function Map() {
               </div>
             )}
           </div>
-          {/* 지도 + 결과 패널 끝 */}
         </div>
       </div>
     </div>
   );
 }
-
-export default Map;
