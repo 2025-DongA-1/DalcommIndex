@@ -25,6 +25,14 @@ const Chat = () => {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const onKeywordClick = (kw) => {
+  setInput((prev) => {
+    const p = (prev || "").trim();
+    return p ? `${p} ${kw}` : kw;   // ✅ 여러 개 누르면 이어 붙음
+  });
+  setTimeout(() => inputRef.current?.focus(), 0);
+};
+
   const [messages, setMessages] = useState([]);
   const [isSending, setIsSending] = useState(false);
 
@@ -114,20 +122,27 @@ const Chat = () => {
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .chat-page {
-  min-height: 100vh;
+  height: 100dvh;          /* ✅ 화면 높이를 '고정' */
+  height: 100vh;           /* (구형 브라우저 fallback) */
   font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   background: white;
   color: #111827;
   display: flex;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;     /* ✅ center → stretch (중요) */
   padding: 24px;
+  overflow: hidden;         /* ✅ 페이지(바깥) 스크롤이 아니라 내부에서만 */
 }
+
 
 .app-shell {
   width: 100%;
   max-width: 1200px;
-  min-height: 900px;
+
+  height: 100%;       /* ✅ chat-page(100vh) 안을 꽉 채움 */
+  min-height: 0;      /* ✅ 내부 스크롤 계산 핵심 */
+  overflow: hidden;   /* ✅ 바깥으로 늘어나지 않게 */
+
   background: rgba(255, 255, 255, 0.9);
   border-radius: 26px;
   box-shadow: 0 22px 60px rgba(15, 23, 42, 0.18);
@@ -137,6 +152,7 @@ const Chat = () => {
   flex-direction: column;
   padding: 18px 22px 20px;
 }
+
 
 .top-bar {
   display: flex;
@@ -183,6 +199,9 @@ const Chat = () => {
   grid-template-columns: 4fr 1fr;
   gap: 14px;
   margin-top: 8px;
+
+   min-height: 0;      /* ✅ 추가 */
+  overflow: hidden;   /* ✅ 추가 */
 }
 
 .chat-panel {
@@ -192,6 +211,9 @@ const Chat = () => {
   border: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
+   min-height: 0;
+    min-height: 0;     /* ✅ 추가 */
+  overflow: hidden;  /* ✅ 추가 */
 }
 
 .chat-header {
@@ -228,6 +250,7 @@ const Chat = () => {
   flex-direction: column;
   gap: 8px;
   overflow: hidden;
+   min-height: 0;
 }
 
 .chat-scroll {
@@ -238,6 +261,8 @@ const Chat = () => {
   flex-direction: column;
   gap: 8px;
   align-items: stretch;
+  min-height: 0;
+
 }
 
 .bubble-row { display: flex; align-items: flex-end; gap: 6px; width: 100%; }
@@ -430,15 +455,73 @@ const Chat = () => {
 .result-btn:hover, .result-link:hover{ filter: brightness(0.98); }
 
 @media (max-width: 880px) {
-  .chat-page { padding: 16px; }
-  .app-shell { padding: 14px 14px 16px; }
-  .chat-layout { grid-template-columns: 1fr; }
+  .chat-page {
+  height: 100vh;            /* ✅ min-height 말고 height로 고정 */
+  font-family: "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: white;
+  color: #111827;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;     /* ✅ center → stretch */
+  padding: 24px;
+  overflow: hidden;         /* ✅ 페이지(바깥) 스크롤 막기 */
+}
+
+  .app-shell {
+  width: 100%;
+  max-width: 1200px;
+
+  height: 100%;       /* ✅ chat-page(100vh) 안에서 꽉 채움 */
+  max-height: 900px;  /* ✅ 원래 900 느낌 유지 */
+  min-height: 0;      /* ✅ 내부 스크롤 계산 핵심 */
+
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 26px;
+  box-shadow: 0 22px 60px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 20px;
+  overflow: hidden;   /* ✅ 바깥으로 삐져나가며 스크롤 생기는 것 방지 */
+}
+
+ .chat-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 4fr 1fr;
+  gap: 14px;
+  margin-top: 8px;
+
+  min-height: 0; /* ✅ 추가 */
+}
 }
 
 @media (max-width: 600px) {
   .top-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
   .nav-buttons { align-self: flex-end; }
   .brand-text-sub { display: none; }
+}
+
+
+.tag-chip {
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  font-size: 11px;
+  background: #f9fafb;
+  color: #4b5563;
+
+  cursor: pointer; /* ✅ 손모양 */
+  font-weight: 400;
+  transition: font-weight 0.15s ease, color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.tag-chip:hover {
+  font-weight: 700; /* ✅ 예시문장처럼 진해짐 */
+  color: #111827;
+  background: #ffffff;     /* (선택) 더 “눌러지는 느낌” */
+  border-color: #c7d2fe;   /* (선택) */
 }
         `}
       </style>
@@ -633,19 +716,19 @@ const Chat = () => {
                   자주 쓰이는 키워드
                 </div>
 
-                <div className="tag-grid">
-                  <span className="tag-chip">나주</span>
-                  <span className="tag-chip">광주 상무지구</span>
-                  <span className="tag-chip">조용한</span>
-                  <span className="tag-chip">감성적인</span>
-                  <span className="tag-chip">뷰맛집</span>
-                  <span className="tag-chip">공부</span>
-                  <span className="tag-chip">데이트</span>
-                  <span className="tag-chip">수다</span>
-                  <span className="tag-chip">디저트 맛집</span>
-                  <span className="tag-chip">케이크</span>
-                  <span className="tag-chip">커피</span>
-                </div>
+               <div className="tag-grid">
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("나주")}>나주</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("광주 상무지구")}>광주 상무지구</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("조용한")}>조용한</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("감성적인")}>감성적인</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("뷰맛집")}>뷰맛집</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("공부")}>공부</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("데이트")}>데이트</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("수다")}>수다</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("디저트 맛집")}>디저트 맛집</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("케이크")}>케이크</button>
+                 <button type="button" className="tag-chip" onClick={() => onKeywordClick("커피")}>커피</button>
+               </div>
 
                 <br />
 
