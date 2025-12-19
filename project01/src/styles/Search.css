@@ -286,3 +286,25 @@
 @media (max-width: 980px){
   .sr-body{ grid-template-columns: 1fr; }
 }
+
+/* 체크/라디오 한 줄 정렬 */
+.check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 라디오/체크 박스 크기 정상화 (지금처럼 커지는 것 방지) */
+.check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  transform: none;   /* 혹시 기존에 scale 걸려있으면 무조건 해제 */
+}
+
+/* 글씨가 '광/주/동/구'로 쪼개지지 않게 */
+.check span {
+  word-break: keep-all;
+  white-space: nowrap;  /* 한 줄 유지 (원하면 줄바꿈 허용으로 바꿔도 됨) */
+}
+

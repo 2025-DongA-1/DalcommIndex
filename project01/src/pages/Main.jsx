@@ -79,7 +79,7 @@ export default function Main() {
   const q = keyword.trim();
 
   const params = new URLSearchParams();
-  if (region !== "all") params.set("region", region);
+  if (region !== "all") params.set("regions", region);
   if (q) params.set("q", q);
 
   navigate(`/search?${params.toString()}`);
@@ -125,7 +125,7 @@ export default function Main() {
                   key={t}
                   type="button"
                   className="chip"
-                  onClick={() => navigate(`/search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
+                  onClick={() => navigate(`/search?regions=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
                 >
                   #{t}
                 </button>
@@ -152,7 +152,7 @@ export default function Main() {
         <button
           key={c.id}
           className="img-card"
-          onClick={() => navigate(`/search?region=${encodeURIComponent(c.id)}`)}
+          onClick={() => navigate(`/search?regions=${encodeURIComponent(c.id)}`)}
         >
           <div className="thumb">
             <img src={c.img} alt="" />
@@ -180,7 +180,7 @@ export default function Main() {
           className="img-card"
           onClick={() =>
             navigate(
-              `/search?region=${encodeURIComponent(region)}&themes=${encodeURIComponent(c.key)}`
+              `/search?regions=${encodeURIComponent(region)}&themes=${encodeURIComponent(c.key)}`
             )
           }
         >

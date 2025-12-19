@@ -3,6 +3,10 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import "../styles/Search.css";
 
+
+
+
+
 const REGION_OPTIONS = [
   { value: "all", label: "전체" },
   { value: "dong-gu", label: "광주 동구" },
@@ -72,14 +76,14 @@ export default function Search() {
   const [sp, setSp] = useSearchParams();
 
   // URL -> 초기값
-  const initialRegion = sp.get("region") ?? "all";
+ const initialRegions = (sp.get("regions") ?? "").split(",").filter(Boolean);
   const initialQ = sp.get("q") ?? "";
   const initialSort = sp.get("sort") ?? "relevance"; // relevance | score | rating | reviews
   const initialThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
   const initialDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
 
   // 폼 상태
-  const [region, setRegion] = useState(initialRegion);
+  const [regions, setRegions] = useState(initialRegions);
   const [q, setQ] = useState(initialQ);
   const [sort, setSort] = useState(initialSort);
   const [themes, setThemes] = useState(initialThemes);
@@ -91,7 +95,7 @@ export default function Search() {
 
   // ✅ URL 변경 시 폼 상태도 동기화 (뒤로가기/앞으로가기 대응)
   useEffect(() => {
-    setRegion(sp.get("region") ?? "all");
+    setRegions((sp.get("regions") ?? "").split(",").filter(Boolean));
     setQ(sp.get("q") ?? "");
     setSort(sp.get("sort") ?? "relevance");
     setThemes((sp.get("themes") ?? "").split(",").filter(Boolean));
@@ -101,13 +105,13 @@ export default function Search() {
   const pushParams = (next) => {
     const params = new URLSearchParams();
 
-    const nextRegion = next.region ?? region;
+    const nextRegions = next.regions ?? regions;
     const nextQ = (next.q ?? q).trim();
     const nextSort = next.sort ?? sort;
     const nextThemes = next.themes ?? themes;
     const nextDesserts = next.desserts ?? desserts;
 
-    if (nextRegion !== "all") params.set("region", nextRegion);
+    if (nextRegions?.length) params.set("regions", nextRegions.join(","));
     if (nextQ) params.set("q", nextQ);
     if (nextSort) params.set("sort", nextSort);
     if (nextThemes?.length) params.set("themes", nextThemes.join(","));
@@ -125,7 +129,7 @@ export default function Search() {
   useEffect(() => {
     setLoading(true);
 
-    const urlRegion = sp.get("region") ?? "all";
+    const urlRegions = (sp.get("regions") ?? "").split(",").filter(Boolean);
     const urlQ = (sp.get("q") ?? "").trim().toLowerCase();
     const urlSort = sp.get("sort") ?? "relevance";
     const urlThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
@@ -133,8 +137,10 @@ export default function Search() {
 
     let arr = [...MOCK];
 
-    if (urlRegion !== "all") arr = arr.filter((x) => x.region === urlRegion);
-
+    if (urlRegions.length) {
+  arr = arr.filter((x) => urlRegions.includes(x.region));
+}
+    
     if (urlQ) {
       arr = arr.filter((x) => {
         const hay = `${x.name} ${x.neighborhood} ${x.why.join(" ")} ${x.desserts.join(" ")}`.toLowerCase();
@@ -162,10 +168,13 @@ export default function Search() {
     return () => clearTimeout(t);
   }, [sp]);
 
-  const regionLabel = useMemo(() => {
-    const r = sp.get("region") ?? "all";
-    return REGION_OPTIONS.find((x) => x.value === r)?.label ?? "전체";
-  }, [sp]);
+const regionLabels = useMemo(() => {
+  const rs = (sp.get("regions") ?? "").split(",").filter(Boolean);
+  if (!rs.length) return ["전체"];
+
+  return rs.map((v) => REGION_OPTIONS.find((o) => o.value === v)?.label || v);
+}, [sp]);
+
 
   const summaryQ = sp.get("q") ?? "";
   const count = results.length;
@@ -178,22 +187,25 @@ export default function Search() {
     setDesserts((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
 
+  const toggleRegion = (val) => {
+  setRegions((prev) =>
+    prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]
+  );
+};
+
   const resetFilters = () => {
+    
     // 지역/검색어는 유지하고, 필터/정렬만 초기화
-    const keepRegion = region;
+    const keepRegions = regions;
     const keepQ = q;
 
+    setRegions([]);          // 지역 체크 해제(= 전체)
+    setQ("");
     setSort("relevance");
     setThemes([]);
     setDesserts([]);
 
-    pushParams({
-      region: keepRegion,
-      q: keepQ,
-      sort: "relevance",
-      themes: [],
-      desserts: [],
-    });
+    
   };
 
   return (
@@ -206,29 +218,27 @@ export default function Search() {
           <div className="sr-title">
             <h1>검색 결과</h1>
             <p className="sr-summary">
-              <span className="pill">{regionLabel}</span>
-              {summaryQ ? (
-                <>
-                  <span className="dot">·</span>
-                  <span className="pill">“{summaryQ}”</span>
-                </>
-              ) : null}
-              <span className="dot">·</span>
-              <span className="count">{count}개</span>
-            </p>
+  {regionLabels.map((label) => (
+    <span key={label} className="pill">
+      {label}
+    </span>
+  ))}
+
+  {summaryQ ? (
+    <>
+      <span className="dot">·</span>
+      <span className="pill">“{summaryQ}”</span>
+    </>
+  ) : null}
+
+  <span className="dot">·</span>
+  <span className="count">{count}개</span>
+</p>
+
           </div>
 
           <form className="sr-search" onSubmit={applySearch}>
-            <label className="sr-field">
-              <span className="sr-label">지역</span>
-              <select value={region} onChange={(e) => setRegion(e.target.value)}>
-                {REGION_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+
 
             <label className="sr-field grow">
               <span className="sr-label">검색</span>
@@ -259,6 +269,9 @@ export default function Search() {
       {/* 본문: 필터 + 결과 */}
       <main className="sr-container sr-body">
         <aside className="sr-filters">
+      
+
+
           <div className="box">
             <div className="box-head">
               <h2>필터</h2>
@@ -267,7 +280,38 @@ export default function Search() {
               </button>
             </div>
 
-            <div className="filter-block">
+            {/* ✅ 지역 */}
+<div className="filter-block">
+  <div className="filter-title">지역</div>
+
+  <div className="check-list">
+    {/* 전체(= regions 비우기) */}
+    <label className="check">
+      <input
+        type="checkbox"
+        checked={regions.length === 0}
+        onChange={() => setRegions([])}
+      />
+      <span>전체</span>
+    </label>
+
+    {/* 나머지 지역 */}
+    {REGION_OPTIONS.filter((r) => r.value !== "all").map((r) => (
+      <label key={r.value} className="check">
+        <input
+          type="checkbox"
+          checked={regions.includes(r.value)}
+          onChange={() => toggleRegion(r.value)}
+        />
+        <span>{r.label}</span>
+      </label>
+    ))}
+  </div>
+  </div>
+
+
+
+          <div className="filter-block"></div>
               <div className="filter-title">테마</div>
               <div className="check-list">
                 {THEME_OPTIONS.map((t) => (
@@ -281,8 +325,7 @@ export default function Search() {
                   </label>
                 ))}
               </div>
-            </div>
-
+            
             <div className="filter-block">
               <div className="filter-title">디저트</div>
               <div className="chips">
