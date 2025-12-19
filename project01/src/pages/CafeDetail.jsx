@@ -24,6 +24,26 @@ async function apiFetch(path, { method = "GET", body } = {}) {
   return data;
 }
 
+function safeParseJson(v, fallback = null) {
+  try {
+    const j = JSON.parse(v);
+    return j ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function renderStars(n) {
+  const x = Math.max(0, Math.min(5, Number(n) || 0));
+  return "★".repeat(x) + "☆".repeat(5 - x);
+}
+
+function formatDate(v) {
+  if (!v) return "";
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+}
+
 export default function CafeDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -31,6 +51,20 @@ export default function CafeDetail() {
 
   const [loading, setLoading] = useState(true);
   const [cafe, setCafe] = useState(null);
+
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [userReviews, setUserReviews] = useState([]);
+  const [reviewFormOpen, setReviewFormOpen] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [reviewForm, setReviewForm] = useState({ rating: 5, content: "" });
+
+  const me = useMemo(() => {
+    const raw = localStorage.getItem("user");
+    const u = raw ? safeParseJson(raw, null) : null;
+    return u && typeof u === "object" ? u : null;
+  }, []);
+  const myUserId = Number(me?.user_id);
 
   // ✅ 안전한 뒤로가기(히스토리 없으면 홈으로)
   const goBack = () => {
@@ -60,6 +94,26 @@ export default function CafeDetail() {
     };
   }, [id, navigate]);
 
+  const loadUserReviews = async () => {
+    try {
+      setReviewsLoading(true);
+      const data = await apiFetch(`/api/cafes/${id}/user-reviews`);
+      setUserReviews(Array.isArray(data.items) ? data.items : []);
+    } catch (e) {
+      console.error(e);
+      setUserReviews([]);
+    } finally {
+      setReviewsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // 카페 상세와 별도로 회원 리뷰 로딩
+    if (!id) return;
+    loadUserReviews();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   const detail = useMemo(() => {
     if (!cafe) return null;
 
@@ -79,13 +133,92 @@ export default function CafeDetail() {
       atmosphere,
       parking,
       reviewCount: cafe.reviewCount ?? 0,
+      userReviewCount: cafe.userReviewCount ?? 0,
+      userRatingAvg: cafe.userRatingAvg ?? null,
       score: cafe.score ?? 0,
       photos: Array.isArray(cafe.photos) ? cafe.photos : [],
       mapUrl: cafe.mapUrl || "",
     };
   }, [cafe]);
 
-  const reviews = []; // 차후 reviews 테이블 연결 시 구현
+  const myReview = useMemo(() => {
+    if (!Number.isFinite(myUserId)) return null;
+    return userReviews.find((r) => Number(r.userId) === myUserId) || null;
+  }, [userReviews, myUserId]);
+
+  const openReviewForm = () => {
+    setReviewError("");
+    const token = localStorage.getItem("accessToken");
+    if (!token) return navigate("/login");
+
+    if (myReview) {
+      setReviewForm({ rating: Number(myReview.rating) || 5, content: myReview.content || "" });
+    } else {
+      setReviewForm({ rating: 5, content: "" });
+    }
+    setReviewFormOpen(true);
+  };
+
+  const closeReviewForm = () => {
+    setReviewError("");
+    setReviewFormOpen(false);
+  };
+
+  const submitReview = async (e) => {
+    e.preventDefault();
+    setReviewError("");
+
+    const token = localStorage.getItem("accessToken");
+    if (!token) return navigate("/login");
+
+    const rating = Number(reviewForm.rating);
+    const content = String(reviewForm.content || "").trim();
+    if (!content) return setReviewError("리뷰 내용을 입력해주세요.");
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) return setReviewError("평점은 1~5 사이여야 합니다.");
+
+    try {
+      setReviewSubmitting(true);
+
+      if (myReview?.id) {
+        await apiFetch(`/api/me/reviews/${myReview.id}`, {
+          method: "PUT",
+          body: { rating, content },
+        });
+      } else {
+        await apiFetch(`/api/cafes/${id}/user-reviews`, {
+          method: "POST",
+          body: { rating, content },
+        });
+      }
+
+      await loadUserReviews();
+      setReviewFormOpen(false);
+    } catch (e2) {
+      if (e2?.status === 401 || e2?.status === 403) return navigate("/login");
+      setReviewError(e2.message || "리뷰 저장 실패");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
+
+  const deleteMyReview = async () => {
+    if (!myReview?.id) return;
+    const ok = confirm("리뷰를 삭제할까요?");
+    if (!ok) return;
+
+    try {
+      setReviewSubmitting(true);
+      await apiFetch(`/api/me/reviews/${myReview.id}`, { method: "DELETE" });
+      await loadUserReviews();
+      setReviewFormOpen(false);
+      setReviewForm({ rating: 5, content: "" });
+    } catch (e) {
+      if (e?.status === 401 || e?.status === 403) return navigate("/login");
+      alert(e.message || "리뷰 삭제 실패");
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -120,6 +253,14 @@ export default function CafeDetail() {
                 <span className="cfd-pill">{detail.region || "지역"}</span>
                 <span className="cfd-dot">·</span>
                 <span className="cfd-pill cfd-pill-ghost">{detail.category}</span>
+                  {detail.userRatingAvg != null ? (
+                    <>
+                      <span className="cfd-dot">·</span>
+                      <span className="cfd-subText">
+                        평점 {renderStars(Math.round(Number(detail.userRatingAvg)))} {Number(detail.userRatingAvg).toFixed(1)}
+                      </span>
+                    </>
+                  ) : null}
                 <span className="cfd-dot">·</span>
                 <span className="cfd-subText">리뷰 {detail.reviewCount ?? 0}</span>
               </div>
@@ -181,11 +322,7 @@ export default function CafeDetail() {
               <div className="cfd-photoGrid">
                 {(detail.photos.length ? detail.photos : new Array(4).fill(null)).map((url, i) => (
                   <div key={i} className="cfd-photo">
-                    {url ? (
-                      <img src={url} alt={`cafe-${i}`} className="cfd-photoImg" />
-                    ) : (
-                      <div className="cfd-photoPh">사진 준비중</div>
-                    )}
+                    {url ? <img src={url} alt={`cafe-${i}`} className="cfd-photoImg" /> : <div className="cfd-photoPh">사진 준비중</div>}
                   </div>
                 ))}
               </div>
@@ -228,24 +365,81 @@ export default function CafeDetail() {
             <section className="cfd-card">
               <div className="cfd-cardHead cfd-between">
                 <div className="cfd-cardTitle">달콤인덱스 회원 리뷰</div>
-                <button
-                  type="button"
-                  className="cfd-btn"
-                  onClick={() => alert("리뷰 작성 기능은 다음 단계에서 연결해요!")}
-                >
-                  + 리뷰 작성
+                <button type="button" className="cfd-btn" onClick={openReviewForm}>
+                  {myReview ? "내 리뷰 수정" : "+ 리뷰 작성"}
                 </button>
               </div>
 
               <div className="cfd-reviewBody">
-                {reviews.length === 0 ? (
-                  <div className="cfd-empty">아직 리뷰가 없어요 🙂</div>
-                ) : (
-                  reviews.map((r) => (
-                    <div key={r.id} className="cfd-reviewItem">
-                      {r.text}
+                <div className="cfd-reviewSummary">회원리뷰 {detail.userReviewCount ?? userReviews.length}개</div>
+
+                {reviewFormOpen && (
+                  <form className="cfd-reviewForm" onSubmit={submitReview}>
+                    <div className="cfd-reviewFormTop">
+                      <div className="cfd-reviewFormRow">
+                        <label className="cfd-reviewLabel">평점</label>
+                        <select
+                          className="cfd-reviewSelect"
+                          value={reviewForm.rating}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, rating: Number(e.target.value) }))}
+                          disabled={reviewSubmitting}
+                        >
+                          {[5, 4, 3, 2, 1].map((n) => (
+                            <option key={n} value={n}>
+                              {n} ({renderStars(n)})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="cfd-reviewFormRow" style={{ flex: 1 }}>
+                        <label className="cfd-reviewLabel">내용</label>
+                        <textarea
+                          className="cfd-reviewTextarea"
+                          value={reviewForm.content}
+                          onChange={(e) => setReviewForm((p) => ({ ...p, content: e.target.value }))}
+                          placeholder="방문 후기를 남겨주세요."
+                          rows={4}
+                          disabled={reviewSubmitting}
+                        />
+                      </div>
                     </div>
-                  ))
+
+                    {reviewError && <div className="cfd-reviewErr">{reviewError}</div>}
+
+                    <div className="cfd-reviewFormActions">
+                      <button type="submit" className="cfd-btn" disabled={reviewSubmitting}>
+                        {reviewSubmitting ? "저장 중..." : "저장"}
+                      </button>
+                      <button type="button" className="cfd-btn" onClick={closeReviewForm} disabled={reviewSubmitting}>
+                        취소
+                      </button>
+                      {myReview?.id && (
+                        <button type="button" className="cfd-btn cfd-btn-danger" onClick={deleteMyReview} disabled={reviewSubmitting}>
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {reviewsLoading ? (
+                  <div className="cfd-empty" style={{ marginTop: 8 }}>리뷰를 불러오는 중...</div>
+                ) : userReviews.length === 0 ? (
+                  <div className="cfd-empty" style={{ marginTop: 8 }}>아직 리뷰가 없습니다.</div>
+                ) : (
+                  <div className="cfd-reviewList">
+                    {userReviews.map((r) => (
+                      <div key={r.id} className="cfd-reviewItem">
+                        <div className="cfd-reviewMeta">
+                          <div className="cfd-reviewNick">{r.nickname || "사용자"}</div>
+                          <div className="cfd-reviewStars">{renderStars(r.rating)}</div>
+                          <div className="cfd-reviewDate">{formatDate(r.created_at)}</div>
+                        </div>
+                        <div className="cfd-reviewText">{r.content}</div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             </section>

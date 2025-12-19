@@ -3,7 +3,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
-import authRouter from "./auth.js";
+import authRouter, { authRequired } from "./auth.js";
 import { createMeRouter } from "./me.js";
 import { pool } from "./db.js";
 
@@ -30,6 +30,25 @@ const parseCsv = (v) =>
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
+
+/** ====== 테이블/컬럼 존재 여부 캐시(리뷰/설정 기능용) ====== */
+const __tableCache = new Map();
+async function tableExists(tableName) {
+  if (__tableCache.has(tableName)) return __tableCache.get(tableName);
+  const [rows] = await pool.query("SHOW TABLES LIKE ?", [tableName]);
+  const ok = rows.length > 0;
+  __tableCache.set(tableName, ok);
+  return ok;
+}
+
+const __colCache = new Map();
+async function usersHasColumn(col) {
+  if (__colCache.has(col)) return __colCache.get(col);
+  const [rows] = await pool.query("SHOW COLUMNS FROM users LIKE ?", [col]);
+  const ok = rows.length > 0;
+  __colCache.set(col, ok);
+  return ok;
+}
 
 /** ✅ 전역(공유) 데이터셋 변수: 반드시 선언되어야 함 */
 let cafes = [];
@@ -258,10 +277,38 @@ app.get("/api/cafes", async (req, res) => {
 
     const rows = await queryCafesWithLatestStats();
 
+    // ✅ 회원리뷰(달콤인덱스) 집계: cafe_id별 count/avg
+    let userAgg = new Map();
+    if (await tableExists("user_reviews")) {
+      const [aggRows] = await pool.query(
+        `SELECT cafe_id, COUNT(*) AS user_review_count, AVG(rating) AS user_rating_avg
+        FROM user_reviews
+        GROUP BY cafe_id`
+      );
+
+      userAgg = new Map(
+        aggRows.map((r) => [
+          Number(r.cafe_id),
+          {
+            count: Number(r.user_review_count || 0) || 0,
+            avg: r.user_rating_avg == null ? null : Number(r.user_rating_avg),
+          },
+        ])
+      );
+    }
+
     let items = rows.map((r) => {
       const scoreBy = safeJsonParse(r.score_by_category_json, {});
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
+      const extReviewCount = Number(r.review_count_total || 0) || 0;
+      const ua = userAgg.get(Number(r.cafe_id)) || { count: 0, avg: null };
+
+      const userReviewCount = ua.count || 0;
+      const userRatingAvg = ua.avg == null ? null : Math.round(Number(ua.avg) * 10) / 10;
+
+      const combinedReviewCount = extReviewCount + userReviewCount;
+
 
       const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
       const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
@@ -287,8 +334,10 @@ app.get("/api/cafes", async (req, res) => {
         region: regionKey,
         neighborhood: neighborhoodFromAddress(r.address),
         score: Number(r.score_total || 0) || 0,
-        rating: null,
-        reviewCount: Number(r.review_count_total || 0) || 0,
+        rating: userRatingAvg,
+        reviewCount: combinedReviewCount,
+        reviewCountExternal: extReviewCount,
+        reviewCountUser: userReviewCount,
         themes: derivedThemes,
         desserts: derivedDesserts,
         thumb,
@@ -374,6 +423,27 @@ app.get("/api/cafes", async (req, res) => {
       if (!rows.length) return res.status(404).json({ message: "카페를 찾을 수 없습니다." });
 
       const r = rows[0];
+
+      // ✅ 회원리뷰 집계(해당 카페)
+      let userReviewCount = 0;
+      let userRatingAvg = null;
+
+      if (await tableExists("user_reviews")) {
+        const [agg] = await pool.query(
+          `SELECT COUNT(*) AS cnt, AVG(rating) AS avg
+          FROM user_reviews
+          WHERE cafe_id = ?`,
+          [cafeId]
+        );
+
+        const row = agg?.[0] || {};
+        userReviewCount = Number(row.cnt || 0) || 0;
+        userRatingAvg = row.avg == null ? null : Math.round(Number(row.avg) * 10) / 10;
+      }
+
+      const extReviewCount = Number(r.review_count_total || 0) || 0;
+      const combinedReviewCount = extReviewCount + userReviewCount;
+
       const scoreBy = safeJsonParse(r.score_by_category_json, {});
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
@@ -396,7 +466,10 @@ app.get("/api/cafes", async (req, res) => {
           y: r.lat ?? null,
           mapUrl,
           photos,
-          reviewCount: Number(r.review_count_total || 0) || 0,
+          reviewCount: combinedReviewCount,          // ✅ A: 합산값
+          reviewCountExternal: extReviewCount,       // 옵션
+          userReviewCount,                          // 회원리뷰 개수
+          userRatingAvg,                            // ✅ B: 회원 평균 평점
           reviewCountRecent: Number(r.review_count_recent || 0) || 0,
           lastMentionedAt: r.last_mentioned_at ?? null,
           score: Number(r.score_total || 0) || 0,
@@ -414,6 +487,140 @@ app.get("/api/cafes", async (req, res) => {
       return res.status(500).json({ message: "카페 상세 조회 실패" });
     }
   });
+
+  /** ✅ (회원) 리뷰 목록/작성 */
+app.get("/api/cafes/:id/user-reviews", async (req, res) => {
+  try {
+    if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+      return res.status(503).json({ message: "DB 설정이 필요합니다." });
+    }
+
+    const cafeId = Number(req.params.id);
+    if (!Number.isFinite(cafeId)) return res.status(400).json({ message: "잘못된 cafe_id" });
+
+    // 테이블이 아직 없으면 빈 배열(프론트는 그대로 동작)
+    if (!(await tableExists("user_reviews"))) {
+      return res.json({ items: [] });
+    }
+
+    const limit = Math.min(Number(req.query.limit || 20), 50);
+    const offset = Math.max(Number(req.query.offset || 0), 0);
+
+    const hasSettings = await usersHasColumn("settings_json");
+    const selectSettings = hasSettings ? ", u.settings_json" : "";
+
+    const [rows] = await pool.query(
+      `SELECT
+          r.review_id AS id,
+          r.user_id AS userId,
+          r.rating,
+          r.content,
+          r.created_at,
+          r.updated_at,
+          u.nickname${selectSettings}
+       FROM user_reviews r
+       JOIN users u ON u.user_id = r.user_id
+       WHERE r.cafe_id = ?
+       ORDER BY r.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [cafeId, limit, offset]
+    );
+
+    const items = rows.map((r) => {
+      let nickname = r.nickname ?? "사용자";
+      if (hasSettings && r.settings_json) {
+        try {
+          const s = JSON.parse(r.settings_json);
+          if (s && s.profilePublic === false) nickname = "익명";
+        } catch {
+          // ignore
+        }
+      }
+      return {
+        id: Number(r.id),
+        userId: Number(r.userId),
+        nickname,
+        rating: Number(r.rating),
+        content: r.content ?? "",
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+      };
+    });
+
+    return res.json({ items });
+  } catch (e) {
+    console.error("[api/cafes/:id/user-reviews]", e);
+    return res.status(500).json({ message: "회원 리뷰 조회 실패" });
+  }
+});
+
+app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
+  try {
+    if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+      return res.status(503).json({ message: "DB 설정이 필요합니다." });
+    }
+    if (!(await tableExists("user_reviews"))) {
+      return res
+        .status(501)
+        .json({ message: "user_reviews 테이블이 없습니다. (1번 단계: 테이블 생성이 필요합니다)" });
+    }
+
+    const cafeId = Number(req.params.id);
+    if (!Number.isFinite(cafeId)) return res.status(400).json({ message: "잘못된 cafe_id" });
+
+    const userId = Number(req.user.sub);
+    const rating = Number(req.body?.rating);
+    const content = String(req.body?.content || "").trim();
+
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "평점(rating)은 1~5 사이여야 합니다." });
+    }
+    if (!content) return res.status(400).json({ message: "리뷰 내용(content)을 입력해주세요." });
+
+    // 카페 존재 확인(에러 메시지 명확화)
+    const [cafeRows] = await pool.query("SELECT cafe_id FROM cafes WHERE cafe_id = ? LIMIT 1", [cafeId]);
+    if (!cafeRows.length) return res.status(404).json({ message: "카페를 찾을 수 없습니다." });
+
+    try {
+      await pool.query(
+        `INSERT INTO user_reviews (cafe_id, user_id, rating, content)
+         VALUES (?, ?, ?, ?)`,
+        [cafeId, userId, rating, content]
+      );
+      return res.status(201).json({ ok: true, created: true });
+    } catch (e) {
+      // (cafe_id, user_id) UNIQUE가 있다면: 다시 작성 시 업데이트
+      if (e?.code === "ER_DUP_ENTRY") {
+        try {
+          const [result] = await pool.query(
+            `UPDATE user_reviews
+             SET rating = ?, content = ?, updated_at = NOW()
+             WHERE cafe_id = ? AND user_id = ?`,
+            [rating, content, cafeId, userId]
+          );
+          return res.json({ ok: true, updated: result.affectedRows > 0 });
+        } catch (e2) {
+          // updated_at 컬럼이 없는 경우에도 동작하도록 fallback
+          if (e2?.code === "ER_BAD_FIELD_ERROR") {
+            const [result2] = await pool.query(
+              `UPDATE user_reviews
+               SET rating = ?, content = ?
+               WHERE cafe_id = ? AND user_id = ?`,
+              [rating, content, cafeId, userId]
+            );
+            return res.json({ ok: true, updated: result2.affectedRows > 0 });
+          }
+          throw e2;
+        }
+      }
+      throw e;
+    }
+  } catch (e) {
+    console.error("[api/cafes/:id/user-reviews/post]", e);
+    return res.status(500).json({ message: "회원 리뷰 작성 실패" });
+  }
+});
+
 
   // 프론트가 /filter 또는 /api/filter로 호출해도 둘 다 OK
   app.post("/filter", handleFilter);

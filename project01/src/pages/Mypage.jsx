@@ -192,6 +192,19 @@ const loadMe = async () => {
     }
   };
 
+  const openFavoriteCafeDetail = (cafe) => {
+  // table 모드: id === cafe_id
+  // json fallback 모드: id가 "123" 같은 숫자 문자열일 수 있음
+  const cafeId = Number(cafe?.id ?? cafe?.cafe_id);
+
+  if (!Number.isFinite(cafeId)) {
+    setError("상세 페이지로 이동할 cafe_id가 없습니다. (즐겨찾기 데이터를 다시 저장해 주세요)");
+    return;
+  }
+
+  nav(`/cafe/${cafeId}`);
+};
+
   const onDeleteReview = async (id) => {
     clearMsg();
     if (!confirm("리뷰를 삭제할까요?")) return;
@@ -400,21 +413,51 @@ const loadMe = async () => {
               ) : (
                 <div className="mypage-fav-list">
                   {favorites.map((cafe) => (
-                    <div key={cafe.id} className="mypage-fav-card">
+                    <div
+                      key={cafe.id}
+                      className="mypage-fav-card is-clickable"
+                      role="button"
+                      tabIndex={0}
+                      title="클릭하면 카페 상세로 이동합니다"
+                      onClick={() => openFavoriteCafeDetail(cafe)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openFavoriteCafeDetail(cafe);
+                        }
+                      }}
+                    >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div>
                           <div style={{ fontWeight: 700 }}>{cafe.name}</div>
                           <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region}</div>
                         </div>
 
-                        <button
-                          type="button"
-                          style={btnDangerGhost}
-                          disabled={loading}
-                          onClick={() => onRemoveFavorite(cafe.id)}
-                        >
-                          제거
-                        </button>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button
+                            type="button"
+                            style={btnGhost}
+                            disabled={loading}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openFavoriteCafeDetail(cafe);
+                            }}
+                          >
+                            상세
+                          </button>
+
+                          <button
+                            type="button"
+                            style={btnDangerGhost}
+                            disabled={loading}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRemoveFavorite(cafe.id);
+                            }}
+                          >
+                            제거
+                          </button>
+                        </div>
                       </div>
 
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>

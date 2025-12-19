@@ -474,6 +474,12 @@ const regionPills = useMemo(() => {
                       <span className="place">{x.neighborhood || "지역 정보"}</span>
                       <span className="dot">·</span>
                       <span className="meta">리뷰 {x.reviewCount}개</span>
+                      {x.rating != null && Number(x.rating) > 0 ? (
+                        <>
+                          <span className="dot">·</span>
+                          <span className="meta">평점 {Number(x.rating).toFixed(1)}</span>
+                        </>
+                      ) : null}
                     </div>
 
                     <div className="why">

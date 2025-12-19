@@ -314,10 +314,112 @@ export function createMeRouter() {
     }
   });
 
-  /** ✅ 리뷰(임시) */
-  router.get("/me/reviews", authRequired, async (req, res) => res.json({ items: [] }));
-  router.put("/me/reviews/:id", authRequired, async (req, res) => res.json({ ok: true }));
-  router.delete("/me/reviews/:id", authRequired, async (req, res) => res.json({ ok: true }));
+  /** ✅ 리뷰 */
+  router.get("/me/reviews", authRequired, async (req, res) => {
+    try {
+      const userId = Number(req.user.sub);
+      if (!(await tableExists("user_reviews"))) return res.json({ items: [] });
+
+      const [rows] = await pool.query(
+        `SELECT
+            r.review_id AS id,
+            r.cafe_id AS cafeId,
+            c.name AS cafeName,
+            r.rating,
+            r.content,
+            r.created_at
+        FROM user_reviews r
+        JOIN cafes c ON c.cafe_id = r.cafe_id
+        WHERE r.user_id = ?
+        ORDER BY r.created_at DESC`,
+        [userId]
+      );
+
+      const items = rows.map((r) => ({
+        id: Number(r.id),
+        cafeId: Number(r.cafeId),
+        cafeName: r.cafeName ?? "카페",
+        rating: Number(r.rating),
+        content: r.content ?? "",
+        created_at: r.created_at,
+      }));
+
+      return res.json({ items });
+    } catch (e) {
+      console.error("[me/reviews/get]", e);
+      return res.status(500).json({ message: "리뷰 내역 조회 실패" });
+    }
+  });
+
+  router.put("/me/reviews/:id", authRequired, async (req, res) => {
+    try {
+      const userId = Number(req.user.sub);
+      const reviewId = Number(req.params.id);
+      const rating = Number(req.body?.rating);
+      const content = String(req.body?.content || "").trim();
+
+      if (!Number.isFinite(reviewId)) return res.status(400).json({ message: "잘못된 review_id" });
+      if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "평점(rating)은 1~5 사이여야 합니다." });
+      }
+      if (!content) return res.status(400).json({ message: "리뷰 내용(content)을 입력해주세요." });
+
+      if (!(await tableExists("user_reviews"))) {
+        return res.status(501).json({ message: "user_reviews 테이블이 없습니다." });
+      }
+
+      // updated_at이 없을 수도 있으니 두 가지 쿼리를 순차 시도
+      let result;
+      try {
+        const [r1] = await pool.query(
+          `UPDATE user_reviews
+          SET rating = ?, content = ?, updated_at = NOW()
+          WHERE review_id = ? AND user_id = ?`,
+          [rating, content, reviewId, userId]
+        );
+        result = r1;
+      } catch (e2) {
+        if (e2?.code !== "ER_BAD_FIELD_ERROR") throw e2;
+        const [r2] = await pool.query(
+          `UPDATE user_reviews
+          SET rating = ?, content = ?
+          WHERE review_id = ? AND user_id = ?`,
+          [rating, content, reviewId, userId]
+        );
+        result = r2;
+      }
+
+      if (!result || result.affectedRows === 0) {
+        return res.status(404).json({ message: "리뷰가 없거나 권한이 없습니다." });
+      }
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("[me/reviews/put]", e);
+      return res.status(500).json({ message: "리뷰 수정 실패" });
+    }
+  });
+
+  router.delete("/me/reviews/:id", authRequired, async (req, res) => {
+    try {
+      const userId = Number(req.user.sub);
+      const reviewId = Number(req.params.id);
+      if (!Number.isFinite(reviewId)) return res.status(400).json({ message: "잘못된 review_id" });
+      if (!(await tableExists("user_reviews"))) return res.status(501).json({ message: "user_reviews 테이블이 없습니다." });
+
+      const [result] = await pool.query(`DELETE FROM user_reviews WHERE review_id = ? AND user_id = ?`, [
+        reviewId,
+        userId,
+      ]);
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: "리뷰가 없거나 권한이 없습니다." });
+      }
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("[me/reviews/delete]", e);
+      return res.status(500).json({ message: "리뷰 삭제 실패" });
+    }
+  });
 
   /** ✅ 설정 저장 */
   router.put("/me/settings", authRequired, async (req, res) => {

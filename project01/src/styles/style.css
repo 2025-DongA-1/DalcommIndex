@@ -1112,6 +1112,21 @@ footer {
   min-height: 130px;    /* 카드 높이 */
 }
 
+.mypage-fav-card.is-clickable{
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.mypage-fav-card.is-clickable:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+}
+
+.mypage-fav-card.is-clickable:focus{
+  outline: 2px solid rgba(255,75,130,0.35);
+  outline-offset: 2px;
+}
+
 /* sidebar 수정*/
 
 /* Sidebar filter chip 버튼 기본 스타일 제거 */
@@ -1780,6 +1795,101 @@ footer {
 .cfd-empty{
   font-size: 13px;
   color: #9ca3af;
+}
+
+.cfd-reviewSummary{
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 10px;
+}
+
+.cfd-reviewForm{
+  border: 1px solid #eee;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+  margin-bottom: 12px;
+}
+.cfd-reviewFormTop{
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cfd-reviewFormRow{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 160px;
+}
+.cfd-reviewLabel{
+  font-size: 12px;
+  color: #6b7280;
+}
+.cfd-reviewSelect{
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+.cfd-reviewTextarea{
+  width: 100%;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 13px;
+  resize: vertical;
+}
+.cfd-reviewErr{
+  margin-top: 10px;
+  font-size: 12px;
+  color: #b91c1c;
+}
+.cfd-reviewFormActions{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.cfd-btn-danger{
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.cfd-reviewList{
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+.cfd-reviewItem{
+  border: 1px solid #eee;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+.cfd-reviewMeta{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #6b7280;
+}
+.cfd-reviewNick{
+  font-weight: 800;
+  color: #111827;
+}
+.cfd-reviewStars{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.cfd-reviewDate{
+  margin-left: auto;
+}
+.cfd-reviewText{
+  margin-top: 8px;
+  font-size: 13px;
+  color: #111827;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .cfd-sticky{
