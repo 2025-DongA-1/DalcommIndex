@@ -4,6 +4,16 @@ import Header from "../components/Header";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
+function hashCode(str = "") {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = (h << 5) - h + str.charCodeAt(i);
+    h |= 0; // 32-bit
+  }
+  return Math.abs(h);
+}
+
+
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
   const res = await fetch(`${API_BASE}${path}`, {
