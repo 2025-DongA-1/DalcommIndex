@@ -138,6 +138,7 @@ export default function CafeDetail() {
       score: cafe.score ?? 0,
       photos: Array.isArray(cafe.photos) ? cafe.photos : [],
       mapUrl: cafe.mapUrl || "",
+      keywordCounts: Array.isArray(cafe.keywordCounts) ? cafe.keywordCounts : [],
     };
   }, [cafe]);
 
@@ -234,6 +235,84 @@ export default function CafeDetail() {
   if (!detail) return null;
 
   const favoriteCafeId = Number(detail.cafe_id ?? detail.id);
+
+  function WordCloud({ items, onClickWord, initialLimit = 30, maxLimit = 80 }) {
+    const [expanded, setExpanded] = useState(false);
+
+    const words = useMemo(() => {
+      const arr = Array.isArray(items) ? items : [];
+      return arr
+        .map((w) => ({
+          text: (w?.text ?? "").toString().trim(),
+          value: Number(w?.value ?? 0),
+        }))
+        .filter((w) => w.text && Number.isFinite(w.value) && w.value > 0)
+        .sort((a, b) => b.value - a.value);
+    }, [items]);
+
+    if (!words.length) return <div className="cfd-subPh">워드클라우드 데이터가 없습니다.</div>;
+
+    const shown = expanded ? words.slice(0, maxLimit) : words.slice(0, initialLimit);
+
+    // ✅ 로그 스케일: 빈도 차이를 더 잘 보이게
+    const logs = shown.map((w) => Math.log(w.value + 1));
+    const min = Math.min(...logs);
+    const max = Math.max(...logs);
+
+    const minPx = 12;
+    const maxPx = 34;
+
+    const sizeOf = (v) => {
+      const x = Math.log(Number(v) + 1);
+      if (max <= min) return Math.round((minPx + maxPx) / 2);
+      const t = (x - min) / (max - min);
+      const eased = Math.pow(t, 0.75);
+      return Math.round(minPx + (maxPx - minPx) * eased);
+    };
+
+    const weightOf = (v) => {
+      const x = Math.log(Number(v) + 1);
+      if (max <= min) return 600;
+      const t = (x - min) / (max - min);
+      return t > 0.7 ? 800 : t > 0.4 ? 700 : 600;
+    };
+
+    return (
+      <>
+        <div className="cfd-wcWrap" aria-label="카페 워드클라우드">
+          {shown.map((w) => {
+            const hue = hashCode(w.text) % 360; // 단어별 고정 색상(과하지 않게)
+            return (
+              <button
+                key={w.text}
+                type="button"
+                className="cfd-wcWord"
+                style={{
+                  fontSize: sizeOf(w.value),
+                  fontWeight: weightOf(w.value),
+                  backgroundColor: `hsl(${hue} 60% 96%)`,
+                  borderColor: `hsl(${hue} 35% 86%)`,
+                  color: `hsl(${hue} 35% 25%)`,
+                }}
+                title={`${w.text} (${w.value}회)`}
+                onClick={() => onClickWord?.(w.text)}
+              >
+                {w.text}
+              </button>
+            );
+          })}
+        </div>
+
+        {words.length > initialLimit && (
+          <div className="cfd-wcMoreRow">
+            <button type="button" className="cfd-wcMoreBtn" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "접기" : `더보기 (+${Math.min(words.length, maxLimit) - initialLimit})`}
+            </button>
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="cfd-page">
@@ -461,7 +540,16 @@ export default function CafeDetail() {
 
                 <div className="cfd-subCard">
                   <div className="cfd-subCardTitle">워드클라우드</div>
-                  <div className="cfd-subPh">(추후) 워드클라우드 이미지 표시</div>
+                   <WordCloud
+                      items={detail.keywordCounts}
+                      onClickWord={(w) => {
+                        const params = new URLSearchParams();
+                        // region을 search 필터에 같이 넘기고 싶으면
+                        if (detail.region) params.set("region", detail.region);
+                        params.set("q", w);
+                        navigate(`/search?${params.toString()}`);
+                      }}
+                    />
                 </div>
 
                 <div className="cfd-subCard">

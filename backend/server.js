@@ -536,7 +536,8 @@ app.get("/api/cafes", async (req, res) => {
           s.review_count_recent,
           s.last_mentioned_at,
           s.score_by_category_json,
-          s.top_keywords_json
+          s.top_keywords_json,
+          s.keyword_counts_json
         FROM cafes c
         LEFT JOIN (
           SELECT s1.*
@@ -582,6 +583,7 @@ app.get("/api/cafes", async (req, res) => {
       const scoreBy = safeJsonParse(r.score_by_category_json, {});
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
+      const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
 
       const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
       const photos = arrayFromJson(r.images_json);
@@ -589,6 +591,70 @@ app.get("/api/cafes", async (req, res) => {
 
       const tags = Array.from(new Set([...topKeywordsArr, ...menuTags, ...recoTags].map((x) => normalizeStr(x)).filter(Boolean)))
         .slice(0, 12);
+
+      const keywordCounts = (() => {
+        const out = [];
+
+        // 배열 형태 처리
+        if (Array.isArray(keywordCountsRaw)) {
+          for (const it of keywordCountsRaw) {
+            if (!it) continue;
+
+            // [["말차",12], ...]
+            if (Array.isArray(it) && it.length >= 2) {
+              const text = normalizeStr(it[0]);
+              const value = Number(it[1]);
+              if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+              continue;
+            }
+
+            // [{text,value}, {token,cnt} ...]
+            if (typeof it === "object") {
+              const text = normalizeStr(it.text ?? it.word ?? it.token ?? it.keyword);
+              const value = Number(it.value ?? it.count ?? it.cnt ?? it.freq);
+              if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+            }
+          }
+        }
+
+        // 객체 형태 처리: {"말차":12, ...}
+        if (
+          !out.length &&
+          keywordCountsRaw &&
+          typeof keywordCountsRaw === "object" &&
+          !Array.isArray(keywordCountsRaw)
+        ) {
+          for (const [k, v] of Object.entries(keywordCountsRaw)) {
+            const text = normalizeStr(k);
+            const value = Number(v);
+            if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+          }
+        }
+
+        // fallback: keyword_counts_json이 비어있으면 topKeywords로 임시 가중치 생성
+        if (!out.length && topKeywordsArr.length) {
+          const base = Math.min(40, topKeywordsArr.length);
+          for (let i = 0; i < base; i++) {
+            const text = normalizeStr(topKeywordsArr[i]);
+            if (!text) continue;
+            out.push({ text, value: base - i });
+          }
+        }
+
+        // 중복 제거(최대값 유지) + 정렬 + 상위 60개 제한
+        const m = new Map();
+        for (const it of out) {
+          const key = normalizeStr(it.text);
+          if (!key) continue;
+          m.set(key, Math.max(Number(m.get(key) || 0), Number(it.value || 0)));
+        }
+
+        return Array.from(m.entries())
+          .map(([text, value]) => ({ text, value }))
+          .sort((a, b) => (b.value || 0) - (a.value || 0))
+          .slice(0, 60);
+      })();
+
 
       return res.json({
         cafe: {
@@ -615,6 +681,7 @@ app.get("/api/cafes", async (req, res) => {
           topKeywords: topKeywordsArr,
           menuTags,
           recoTags,
+          keywordCounts,
         },
       });
     } catch (e) {

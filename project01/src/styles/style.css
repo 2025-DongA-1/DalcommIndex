@@ -2606,3 +2606,47 @@ footer {
 .region-sub-chip .filter-chip-inner {
   padding: 8px 11px 7px 11px;
 }
+
+/* 워드 크라우드 관련 */
+.cfd-wcWrap {
+  width: 100%;
+  min-height: 140px;
+  padding: 12px;
+  border: 1px solid #eee;
+  border-radius: 14px;
+  background: #fafafa;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center; /* ✅ 가운데 정렬 */
+  align-content: flex-start;
+}
+
+.cfd-wcWord {
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 999px; /* ✅ 칩 형태 */
+  line-height: 1.1;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  white-space: nowrap;
+}
+
+.cfd-wcWord:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+}
+
+.cfd-wcMoreRow {
+  display: flex;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.cfd-wcMoreBtn {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
