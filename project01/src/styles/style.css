@@ -2212,15 +2212,21 @@ footer {
    아래를 style.css 맨 아래에 추가
 ========================= */
 
+/* =========================
+   PlacePopup - KakaoMap style (pp- prefix)
+   아래를 style.css 맨 아래에 추가
+========================= */
+
 .place-modal-backdrop{
-  align-items: flex-end;            /* ✅ 하단 시트 느낌 */
-  padding: 90px 12px 12px;
+  align-items: center;              /* ✅ 가운데 정렬 */
+  justify-content: center;          /* ✅ 가로도 중앙 */
+  padding: 16px 12px;               /* ✅ 위 90px 때문에 아래로 밀리던 것 제거 */
 }
 
 .place-modal.pp-sheet{
   width: min(430px, 96vw);
   border-radius: 18px;
-  max-height: calc(100vh - 110px);
+  max-height: calc(100vh - 32px);   /* ✅ 화면 안에서만(상/하 여백 확보) */
   overflow: hidden;
 }
 
@@ -2649,4 +2655,93 @@ footer {
   border-radius: 10px;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+/* ✅ 사이드바: 내용은 스크롤, 하단 버튼은 항상 보이게 */
+.sidebar {
+  /* 기존이 fixed/absolute 라면 유지하셔도 됩니다 */
+  height: 100%;
+  max-height: 100vh;
+}
+
+/* 새로 추가한 레이아웃 래퍼 */
+.sidebar-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100vh;
+  overflow: hidden; /* 내용이 footer 영역을 침범하지 못하게 */
+}
+
+/* 내용 영역만 스크롤 */
+.sidebar-content-wrap {
+  flex: 1;
+  overflow-y: auto;
+
+  /* ✅ footer(검색버튼) 높이만큼 여백을 줘서 마지막 옵션이 버튼 뒤로 숨지 않게 */
+  padding-bottom: 96px;
+}
+
+/* footer는 아래에 고정(sticky) + 위에 떠 있게 */
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+
+  /* 배경이 투명하면 뒤 컨텐츠가 비쳐서 버튼이 가려진 것처럼 보일 수 있어요 */
+  background: inherit;
+
+  padding: 12px 12px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* 버튼이 footer에서 꽉 차게 */
+.sidebar-search-btn {
+  width: 100%;
+  position: relative;
+  z-index: 60;
+}
+
+/* ====== ✅ FIX: 사이드바 하단 검색버튼 '가림' + '오른쪽 쏠림' 최종 오버라이드 ====== */
+
+/* 사이드바 자체는 스크롤 안 만들고(중복 스크롤 방지), 내용영역만 스크롤 */
+.sidebar {
+  overflow-y: hidden !important;
+}
+
+/* 콘텐츠(스크롤) + footer(고정) 레이아웃 */
+.sidebar-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.sidebar-content-wrap {
+  flex: 1;
+  overflow-y: auto;
+  /* footer 높이만큼 여백: 마지막 옵션이 버튼 뒤로 안 숨게 */
+  padding-bottom: 96px;
+}
+
+/* 하단 고정 영역 */
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 999;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 12px 16px 16px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* ✅ 핵심: 예전 absolute/left/bottom을 완전히 제거해서 '쏠림' 없애기 */
+.sidebar-search-btn {
+  width: 100% !important;
+  position: static !important;  /* absolute/relative 다 무력화 */
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  margin: 0 !important;
+  transform: none !important;
 }

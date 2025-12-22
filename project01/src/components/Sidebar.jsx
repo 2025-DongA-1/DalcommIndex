@@ -1,5 +1,4 @@
-// src/components/Sidebar.jsx (프로젝트 적용 버전)
-
+// src/components/Sidebar.jsx (검색버튼 가림 현상 해결 버전)
 import React, { useMemo, useState } from "react";
 
 // ✅ 지역 값(표시용) -> 서버/데이터 매칭용(여러 표기)으로 확장
@@ -25,23 +24,7 @@ const GWANGJU_SUB_OPTIONS = [
   { label: "광산구", value: "광주 광산구" },
 ];
 
-
-
-/**
- * Sidebar 필터 -> 백엔드 recommendCafes(prefs, ...)에 맞는 prefs를 만들어 전달합니다.
- * prefs 형태:
- * {
- *   region: string[],
- *   atmosphere: string[],
- *   purpose: string[],
- *   menu: string[],
- *   taste: string[],
- *   required: string[]
- * }
- */
-
 const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
-  // ✅ 필터 데이터(현재는 고정). 추후 DB/서버에서 내려받아도 구조만 유지하면 됩니다.
   const filters = useMemo(
     () => ({
       지역: ["광주", "나주", "담양", "화순"],
@@ -53,7 +36,6 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
     []
   );
 
-  // ✅ 선택 상태(그룹별 Set)
   const [selected, setSelected] = useState(() => ({
     지역: new Set(),
     분위기: new Set(),
@@ -81,7 +63,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
       "방문 목적": new Set(),
       "필수 조건": new Set(),
     });
-    onReset?.(); // Map.jsx에서 setSearchResults([]) 실행
+    onReset?.();
   };
 
   const buildPrefs = () => {
@@ -94,7 +76,6 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
       required: [],
     };
 
-    // ✅ 지역은 데이터/서버가 어떤 표기를 쓰더라도 매칭되도록 "별칭"까지 함께 전송
     const regionLabels = Array.from(selected["지역"] || []);
     const regionExpanded = [];
     for (const label of regionLabels) {
@@ -124,56 +105,91 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
     return chips;
   }, [selected]);
 
-    const [isGwangjuOpen, setIsGwangjuOpen] = useState(false);
+  const [isGwangjuOpen, setIsGwangjuOpen] = useState(false);
 
-    // ✅ 광주 '전체' vs '구' 선택 충돌 방지(전체 선택 시 구 해제 / 구 선택 시 전체 해제)
-    const toggleRegionOption = (canonical) => {
-      setSelected((prev) => {
-        const next = { ...prev };
-        const copy = new Set(next["지역"] || []);
+  const toggleRegionOption = (canonical) => {
+    setSelected((prev) => {
+      const next = { ...prev };
+      const copy = new Set(next["지역"] || []);
 
-        const isAll = canonical === "광주 전체";
-        const isDistrict = canonical.startsWith("광주 ") && !isAll;
+      const isAll = canonical === "광주 전체";
+      const isDistrict = canonical.startsWith("광주 ") && !isAll;
 
-        if (copy.has(canonical)) {
-          copy.delete(canonical);
-        } else {
-          if (isAll) {
-            // 전체 선택 시 구 선택 해제
-            for (const v of Array.from(copy)) {
-              if (v.startsWith("광주 ") && v !== "광주 전체") copy.delete(v);
-            }
+      if (copy.has(canonical)) {
+        copy.delete(canonical);
+      } else {
+        if (isAll) {
+          for (const v of Array.from(copy)) {
+            if (v.startsWith("광주 ") && v !== "광주 전체") copy.delete(v);
           }
-          if (isDistrict) {
-            // 구 선택 시 전체 해제
-            copy.delete("광주 전체");
-          }
-          copy.add(canonical);
         }
-
-        next["지역"] = copy;
-        return next;
-      });
-    };
-
-    const displayChipValue = (group, value) => {
-      if (group === "지역") {
-        if (value === "광주 전체") return "광주(전체)";
-        if (value.startsWith("광주 ")) return value.replace("광주 ", "");
+        if (isDistrict) {
+          copy.delete("광주 전체");
+        }
+        copy.add(canonical);
       }
-      return value;
-    };
 
-    const renderStandardChips = (group, options) => (
-      <div className="filter-options-container">
-        {options.map((option) => {
-          const isSelected = selected[group]?.has(option);
+      next["지역"] = copy;
+      return next;
+    });
+  };
+
+  const displayChipValue = (group, value) => {
+    if (group === "지역") {
+      if (value === "광주 전체") return "광주(전체)";
+      if (value.startsWith("광주 ")) return value.replace("광주 ", "");
+    }
+    return value;
+  };
+
+  const renderStandardChips = (group, options) => (
+    <div className="filter-options-container">
+      {options.map((option) => {
+        const isSelected = selected[group]?.has(option);
+        return (
+          <button
+            key={`${group}-${option}`}
+            type="button"
+            className={`filter-chip-wrap ${isSelected ? "is-selected" : ""}`}
+            onClick={() => toggleOption(group, option)}
+            aria-pressed={isSelected}
+          >
+            <div className="filter-chip-inner">
+              <div className="filter-chip-text">{option}</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const renderRegionChips = (options) => {
+    const otherRegions = options.filter((o) => o !== "광주");
+
+    return (
+      <div className="filter-options-container region-group">
+        <button
+          type="button"
+          className={`filter-chip-wrap region-toggle ${isGwangjuOpen ? "is-open" : ""}`}
+          onClick={() => setIsGwangjuOpen((p) => !p)}
+          aria-expanded={isGwangjuOpen}
+        >
+          <div className="filter-chip-inner">
+            <div className="filter-chip-text">
+              <span>광주</span>
+              <span className={`region-caret ${isGwangjuOpen ? "open" : ""}`}>▾</span>
+            </div>
+          </div>
+        </button>
+
+        {otherRegions.map((option) => {
+          const isSelected = selected["지역"]?.has(option);
           return (
             <button
-              key={`${group}-${option}`}
+              key={`지역-${option}`}
               type="button"
               className={`filter-chip-wrap ${isSelected ? "is-selected" : ""}`}
-              onClick={() => toggleOption(group, option)}
+              onClick={() => toggleOption("지역", option)}
               aria-pressed={isSelected}
             >
               <div className="filter-chip-inner">
@@ -182,148 +198,112 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
             </button>
           );
         })}
+
+        {isGwangjuOpen && (
+          <div className="region-sub-options" role="group" aria-label="광주 구 선택">
+            {GWANGJU_SUB_OPTIONS.map(({ label, value }) => {
+              const isSelected = selected["지역"]?.has(value);
+              return (
+                <button
+                  key={`지역-${value}`}
+                  type="button"
+                  className={`filter-chip-wrap region-sub-chip ${isSelected ? "is-selected" : ""}`}
+                  onClick={() => toggleRegionOption(value)}
+                  aria-pressed={isSelected}
+                >
+                  <div className="filter-chip-inner">
+                    <div className="filter-chip-text">{label}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
+  };
 
-    const renderRegionChips = (options) => {
-      const otherRegions = options.filter((o) => o !== "광주");
-
-      return (
-        <div className="filter-options-container region-group">
-          {/* 광주: 클릭하면 구 옵션 펼침/접기 */}
-          <button
-            type="button"
-            className={`filter-chip-wrap region-toggle ${isGwangjuOpen ? "is-open" : ""}`}
-            onClick={() => setIsGwangjuOpen((p) => !p)}
-            aria-expanded={isGwangjuOpen}
-          >
-            <div className="filter-chip-inner">
-              <div className="filter-chip-text">
-                <span>광주</span>
-                <span className={`region-caret ${isGwangjuOpen ? "open" : ""}`}>▾</span>
-              </div>
-            </div>
-          </button>
-
-          {/* 나주/담양/화순 */}
-          {otherRegions.map((option) => {
-            const isSelected = selected["지역"]?.has(option);
-            return (
-              <button
-                key={`지역-${option}`}
-                type="button"
-                className={`filter-chip-wrap ${isSelected ? "is-selected" : ""}`}
-                onClick={() => toggleOption("지역", option)}
-                aria-pressed={isSelected}
-              >
-                <div className="filter-chip-inner">
-                  <div className="filter-chip-text">{option}</div>
-                </div>
-              </button>
-            );
-          })}
-
-          {/* 광주 구 옵션 */}
-          {isGwangjuOpen && (
-            <div className="region-sub-options" role="group" aria-label="광주 구 선택">
-              {GWANGJU_SUB_OPTIONS.map(({ label, value }) => {
-                const isSelected = selected["지역"]?.has(value);
-                return (
-                  <button
-                    key={`지역-${value}`}
-                    type="button"
-                    className={`filter-chip-wrap region-sub-chip ${isSelected ? "is-selected" : ""}`}
-                    onClick={() => toggleRegionOption(value)}
-                    aria-pressed={isSelected}
-                  >
-                    <div className="filter-chip-inner">
-                      <div className="filter-chip-text">{label}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    const renderChips = (group, options) =>
-      group === "지역" ? renderRegionChips(options) : renderStandardChips(group, options);
+  const renderChips = (group, options) =>
+    group === "지역" ? renderRegionChips(options) : renderStandardChips(group, options);
 
   return (
     <aside className="sidebar" style={{ display: isOpen ? "block" : "none" }}>
-      <div className="sidebar-content-wrap">
-        {/* 1. 필터 헤더 */}
-        <div className="sidebar-header">
-          <div className="filter-title-group">
-            <div className="icon">🧁</div>
-            <div className="text">필터</div>
+      {/* ✅ 레이아웃 안정화: 콘텐츠 스크롤 + 하단 고정 영역 분리 */}
+      <div className="sidebar-layout">
+        <div className="sidebar-content-wrap">
+          {/* 1. 필터 헤더 */}
+          <div className="sidebar-header">
+            <div className="filter-title-group">
+              <div className="icon">🧁</div>
+              <div className="text">필터</div>
+            </div>
+
+            <div className="filter-actions-group">
+              <button type="button" className="filter-reset-btn" onClick={resetAll}>
+                초기화
+              </button>
+              <button type="button" className="close-filter-btn" onClick={toggleSidebar}>
+                ✕ 닫기
+              </button>
+            </div>
           </div>
 
-          <div className="filter-actions-group">
-            <button type="button" className="filter-reset-btn" onClick={resetAll}>
-              초기화
-            </button>
-            <button type="button" className="close-filter-btn" onClick={toggleSidebar}>
-              ✕ 닫기
-            </button>
+          {/* 2. 선택된 필터 영역 */}
+          <div className="active-filters-area">
+            {!hasSelection ? (
+              <div className="no-filter-message">선택된 필터가 없습니다</div>
+            ) : (
+              <div className="active-filters-chips">
+                {activeChips.map((chip) => (
+                  <button
+                    key={`${chip.group}-${chip.value}`}
+                    type="button"
+                    className="active-filter-chip"
+                    onClick={() => {
+                      if (
+                        chip.group === "지역" &&
+                        (chip.value === "광주 전체" || chip.value.startsWith("광주 "))
+                      ) {
+                        return toggleRegionOption(chip.value);
+                      }
+                      return toggleOption(chip.group, chip.value);
+                    }}
+                    title="클릭하면 해제됩니다"
+                  >
+                    <span className="chip-group">{chip.group}</span>
+                    <span className="chip-value">{displayChipValue(chip.group, chip.value)}</span>
+                    <span className="chip-x">✕</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* 3. 필터 그룹 목록 */}
+          {Object.entries(filters).map(([title, options]) => (
+            <div key={title} className="filter-group">
+              <div className="filter-group-title">
+                <div className="text">{title}</div>
+              </div>
+              {renderChips(title, options)}
+            </div>
+          ))}
         </div>
 
-        {/* 2. 선택된 필터 영역 */}
-        <div className="active-filters-area">
-          {!hasSelection ? (
-            <div className="no-filter-message">선택된 필터가 없습니다</div>
-          ) : (
-            <div className="active-filters-chips">
-              {activeChips.map((chip) => (
-                <button
-                  key={`${chip.group}-${chip.value}`}
-                  type="button"
-                  className="active-filter-chip"
-                  onClick={() => {
-                    if (
-                      chip.group === "지역" &&
-                      (chip.value === "광주 전체" || chip.value.startsWith("광주 "))
-                    ) {
-                      return toggleRegionOption(chip.value);
-                    }
-                    return toggleOption(chip.group, chip.value);
-                  }}
-                  title="클릭하면 해제됩니다"
-                >
-                  <span className="chip-group">{chip.group}</span>
-                  <span className="chip-value">{displayChipValue(chip.group, chip.value)}</span>
-                  <span className="chip-x">✕</span>
-                </button>
-              ))}
-            </div>
-          )}
+        {/* ✅ 4. 하단 검색 버튼: sticky footer + z-index 로 절대 가려지지 않게 */}
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            className="sidebar-search-btn"
+            onClick={() => onSearch?.(buildPrefs())}
+            disabled={!hasSelection}
+            title={!hasSelection ? "필터를 하나 이상 선택해 주세요" : "선택한 필터로 검색"}
+          >
+            <span className="icon">🔍</span>
+            <span className="text">검색</span>
+          </button>
         </div>
-
-        {/* 3. 필터 그룹 목록 */}
-        {Object.entries(filters).map(([title, options]) => (
-          <div key={title} className="filter-group">
-            <div className="filter-group-title">
-              <div className="text">{title}</div>
-            </div>
-            {renderChips(title, options)}
-          </div>
-        ))}
       </div>
-
-      {/* 4. 하단 검색 버튼 */}
-      <button
-        type="button"
-        className="sidebar-search-btn"
-        onClick={() => onSearch?.(buildPrefs())}
-        disabled={!hasSelection}
-        title={!hasSelection ? "필터를 하나 이상 선택해 주세요" : "선택한 필터로 검색"}
-      >
-        <span className="icon">🔍</span>
-        <span className="text">검색</span>
-      </button>
     </aside>
   );
 };
