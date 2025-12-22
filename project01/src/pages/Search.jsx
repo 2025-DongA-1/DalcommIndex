@@ -3,16 +3,66 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import "../styles/Search.css";
 
-const PAGE_SIZE = 10;
+const REGION_ALIAS_MAP = {
+  // keys
+  "dong-gu": "dong-gu",
+  "nam-gu": "nam-gu",
+  "buk-gu": "buk-gu",
+  "seo-gu": "seo-gu",
+  "gwangsan-gu": "gwangsan-gu",
+  "hwasun": "hwasun",
+  "damyang": "damyang",
+  "naju": "naju",
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+  // 한글/변형
+  "광주동구": "dong-gu",
+  "광주 동구": "dong-gu",
+  "동구": "dong-gu",
+
+  "광주남구": "nam-gu",
+  "광주 남구": "nam-gu",
+  "남구": "nam-gu",
+
+  "광주북구": "buk-gu",
+  "광주 북구": "buk-gu",
+  "북구": "buk-gu",
+
+  "광주서구": "seo-gu",
+  "광주 서구": "seo-gu",
+  "서구": "seo-gu",
+
+  "광주광산구": "gwangsan-gu",
+  "광주 광산구": "gwangsan-gu",
+  "광산구": "gwangsan-gu",
+
+  "화순군": "hwasun",
+  "담양군": "damyang",
+  "나주시": "naju",
+};
+
+const normalizeRegionToken = (x) => {
+  const t = String(x ?? "").trim();
+  if (!t) return "";
+  if (t === "all") return "all";
+
+  if (REGION_ALIAS_MAP[t]) return REGION_ALIAS_MAP[t];
+  const noSpace = t.replace(/\s/g, "");
+  if (REGION_ALIAS_MAP[noSpace]) return REGION_ALIAS_MAP[noSpace];
+
+  return t;
+};
 
 const parseList = (v) =>
   (v ?? "")
     .split(",")
-    .map((x) => x.trim())
+    .map(normalizeRegionToken)
     .filter(Boolean)
     .filter((x) => x !== "all");
+
+const PAGE_SIZE = 10;
+
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+
 
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
@@ -177,7 +227,7 @@ export default function Search() {
 
   const applySearch = (e) => {
     if (e) e.preventDefault();
-    pushParams({page: 1});
+        pushParams({page: 1});
   };
 
   // ✅ URL 변경 -> DB API 호출
@@ -305,10 +355,6 @@ const endPage = Math.min(startPage + 9, totalPages);
   const next = Math.min(Math.max(1, p), totalPages);
   pushParams({ page: next }); // URL도 같이 변경
   };
-
-
-
-  
 
   return (
     <div className="sr-page">
@@ -562,8 +608,8 @@ const endPage = Math.min(startPage + 9, totalPages);
     </button>
   </div>
 )}
-</>
-          )}
+</>       
+   )}
         </section>
       </main>
     </div>

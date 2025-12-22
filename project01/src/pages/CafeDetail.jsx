@@ -114,6 +114,22 @@ function formatDate(v) {
 }
 
 export default function CafeDetail() {
+  function toRegionKey(regionLabel = "") {
+  const s = String(regionLabel || "").replace(/\s/g, "");
+  if (!s) return "";
+
+  if (s.includes("동구")) return "dong-gu";
+  if (s.includes("남구")) return "nam-gu";
+  if (s.includes("북구")) return "buk-gu";
+  if (s.includes("서구")) return "seo-gu";
+  if (s.includes("광산구")) return "gwangsan-gu";
+  if (s.includes("화순")) return "hwasun";
+  if (s.includes("담양")) return "damyang";
+  if (s.includes("나주")) return "naju";
+
+  return "";
+}
+
   const navigate = useNavigate();
   const { id } = useParams();
   const [sp] = useSearchParams();
@@ -626,7 +642,8 @@ export default function CafeDetail() {
                       onClickWord={(w) => {
                         const params = new URLSearchParams();
                         // region을 search 필터에 같이 넘기고 싶으면
-                        if (detail.region) params.set("region", detail.region);
+                        const regionKey = toRegionKey(detail.region);
+                        if (regionKey) params.set("region", regionKey); 
                         params.set("q", w);
                         navigate(`/search?${params.toString()}`);
                       }}
