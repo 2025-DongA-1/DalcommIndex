@@ -10,9 +10,12 @@ import Join from "./pages/Join";
 import Mypage from "./pages/Mypage";
 import RankingPage from "./pages/RankingPage"
 import CafeDetail from "./pages/CafeDetail";
+import ScrollToTop from "./components/ScrollToTop";
 
 export default function App() {
   return (
+  <>
+  <ScrollToTop/>
     <Routes>
       <Route path="/" element={<Main />} />
       <Route path="/search" element={<Search />} />
@@ -26,5 +29,6 @@ export default function App() {
       <Route path="/cafe/:id" element={<CafeDetail />} />
       <Route path="/cafe" element={<CafeDetail />} />
     </Routes>
+  </>
   );
 }

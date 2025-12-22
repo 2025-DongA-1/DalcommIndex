@@ -79,7 +79,7 @@ export default function Main() {
   const q = keyword.trim();
 
   const params = new URLSearchParams();
-  if (region !== "all") params.set("regions", region);
+  if (region !== "all") params.set("region", region);
   if (q) params.set("q", q);
 
   navigate(`/search?${params.toString()}`);
