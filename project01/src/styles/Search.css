@@ -308,3 +308,26 @@
   white-space: nowrap;  /* 한 줄 유지 (원하면 줄바꿈 허용으로 바꿔도 됨) */
 }
 
+.sr-pagination{
+  display:flex;
+  gap:8px;
+  justify-content:center;
+  margin:18px 0 6px;
+  flex-wrap:wrap;
+}
+.sr-pagination button{
+  padding:8px 10px;
+  border:1px solid #e5e5e5;
+  border-radius:10px;
+  background:#fff;
+  cursor:pointer;
+}
+.sr-pagination button.on{
+  border-color:#ff6b9a;
+  color:#ff6b9a;
+  font-weight:700;
+}
+.sr-pagination button:disabled{
+  opacity:.4;
+  cursor:not-allowed;
+}

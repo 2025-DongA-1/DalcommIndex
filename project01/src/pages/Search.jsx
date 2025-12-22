@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 import "../styles/Search.css";
 
+const PAGE_SIZE = 10;
+
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 const parseList = (v) =>
@@ -86,6 +88,8 @@ function normalizeThumb(src, regionKey) {
 export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
+  const pageFromUrl = Math.max(1, Number(sp.get("page") || 1));
+  const [page, setPage] = useState(pageFromUrl);
   const spKey = sp.toString();
 
   // URL -> 초기값
@@ -123,6 +127,8 @@ export default function Search() {
     setSort(params.get("sort") ?? "relevance");
     setThemes((params.get("themes") ?? "").split(",").filter(Boolean));
     setDesserts((params.get("desserts") ?? "").split(",").filter(Boolean));
+    
+    setPage(Math.max(1, Number(params.get("page") || 1)));
   }, [spKey]);
     
   // const pushParams = (next) => {
@@ -152,12 +158,15 @@ export default function Search() {
     const nextThemes = next.themes ?? themes;
     const nextDesserts = next.desserts ?? desserts;
 
+    const nextPage = next.page ?? 1;
+
     if (nextRegions?.length) params.set("region", nextRegions.join(","));
     if (nextQ) params.set("q", nextQ);
     if (nextSort) params.set("sort", nextSort);
     if (nextThemes?.length) params.set("themes", nextThemes.join(","));
     if (nextDesserts?.length) params.set("desserts", nextDesserts.join(","));
 
+    if (nextPage > 1) params.set("page", String(nextPage));
     const nextKey = params.toString();
     if (nextKey !== spKey) {
       setSp(params, { replace: true });
@@ -168,7 +177,7 @@ export default function Search() {
 
   const applySearch = (e) => {
     if (e) e.preventDefault();
-    pushParams({});
+    pushParams({page: 1});
   };
 
   // ✅ URL 변경 -> DB API 호출
@@ -282,6 +291,21 @@ const regionPills = useMemo(() => {
       desserts: [],
     });
   };
+
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
+  const startPage = Math.floor((page - 1) / 10) * 10 + 1;
+const endPage = Math.min(startPage + 9, totalPages);
+
+  const pagedResults = useMemo(() => {
+  const start = (page - 1) * PAGE_SIZE;
+  return results.slice(start, start + PAGE_SIZE);
+  }, [results, page]);
+
+  const goPage = (p) => {
+  const next = Math.min(Math.max(1, p), totalPages);
+  pushParams({ page: next }); // URL도 같이 변경
+  };
+
 
 
   
@@ -419,7 +443,7 @@ const regionPills = useMemo(() => {
               </div>
             </div>
 
-            <button className="sr-btn" type="button" onClick={() => pushParams({})}>
+            <button className="sr-btn" type="button" onClick={() => pushParams({page: 1})}>
               필터 적용
             </button>
           </div>
@@ -441,8 +465,9 @@ const regionPills = useMemo(() => {
               </button>
             </div>
           ) : (
+            <>
             <div className="card-list">
-              {results.map((x) => (
+              {pagedResults.map((x) => (
                 <button
                   type="button"
                   key={x.id}
@@ -495,6 +520,49 @@ const regionPills = useMemo(() => {
                 </button>
               ))}
             </div>
+
+            {totalPages > 1 && (
+  <div className="sr-pagination">
+    <button type="button" disabled={page === 1} onClick={() => goPage(page - 1)}>
+      이전
+    </button>
+
+    
+  {/* ✅ 2) « : 10개 단위(이전 묶음) */}
+  <button
+    type="button"
+    disabled={startPage === 1}
+    onClick={() => goPage(startPage - 1)}
+  >
+    «
+  </button>
+
+    {Array.from({ length: endPage - startPage + 1 }, (_, i) => startPage + i).map((p) => (
+
+      <button
+        key={p}
+        type="button"
+        className={p === page ? "on" : ""}
+        onClick={() => goPage(p)}
+      >
+        {p}
+      </button>
+    ))}
+
+      <button
+    type="button"
+    disabled={endPage === totalPages}
+    onClick={() => goPage(endPage + 1)}
+  >
+    »
+  </button>
+
+    <button type="button" disabled={page === totalPages} onClick={() => goPage(page + 1)}>
+      다음
+    </button>
+  </div>
+)}
+</>
           )}
         </section>
       </main>
