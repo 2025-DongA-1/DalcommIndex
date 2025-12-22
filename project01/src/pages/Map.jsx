@@ -4,11 +4,11 @@ import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import KakaoMap from "../components/KakaoMap";
 import PlacePopup from "../components/PlacePopup";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 const STORE_KEY = "dalcomm_map_state_v1";
 const VIEW_KEY = "dalcomm_map_view_v1";
 const KEEP_KEY = "dalcomm_keep_map_state_v1";
-
 
 
 // ✅ 지역 표기(사이드바/상단검색) -> 데이터/서버 매칭용(여러 표기) 확장
@@ -87,7 +87,15 @@ function compactCafe(c) {
     region: c.region,
     x: c.x,
     y: c.y,
-    url: c.url,
+    url: c.url ?? c.mapUrl ?? "",
+
+    images:
+      c.imageUrls ??
+      c.images ??
+      c.images_json ??
+      c.imagesJson ??
+      c.photos ??
+      "",
 
     score: c.score,
 
@@ -124,6 +132,9 @@ export default function Map() {
   const [searchResults, setSearchResults] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(null);
 
+  const location = useLocation();
+  const [sp] = useSearchParams();
+
   const [hasSearched, setHasSearched] = useState(false);
   const [topQuery, setTopQuery] = useState("");
 
@@ -137,12 +148,14 @@ export default function Map() {
   // ✅ “복구 중 저장 방지” 플래그
   const restoringRef = useRef(true);
   // ✅ 언마운트 직전에도 최신 state를 저장할 수 있게 ref로 보관
-const latestRef = useRef(null);
-latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults };
+  const latestRef = useRef(null);
+  latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults };
 
+  const lastFocusKeyRef = useRef(null);
 
-  const API_BASE = import.meta.env.VITE_API_BASE || "";
-  const filterUrl = API_BASE ? `${API_BASE}/filter` : "/filter";
+const API_BASE = import.meta.env.VITE_API_BASE || "";
+const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
+
 
   const toggleSidebar = () => setIsSidebarOpen((prev) => !prev);
 
@@ -174,9 +187,16 @@ latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, search
   // ✅ 최초 진입/뒤로가기 복구: useLayoutEffect로 “먼저” 복구해서
   //    빈 state가 저장되어 덮이는 문제를 막습니다.
   useLayoutEffect(() => {
+
     const savedState = safeParse(sessionStorage.getItem(STORE_KEY));
     const savedView = safeParse(sessionStorage.getItem(VIEW_KEY));
-
+    const reset = sp.get("reset") === "1";
+    if (reset) {
+    sessionStorage.removeItem(STORE_KEY);
+    sessionStorage.removeItem(VIEW_KEY);
+    restoringRef.current = false;
+    return;
+  }
     if (savedState) {
       setIsSidebarOpen(savedState.isSidebarOpen ?? true);
       setSearchResults(savedState.searchResults ?? []);
@@ -212,6 +232,56 @@ latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, search
     }
   }, [isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults]);
 
+    useEffect(() => {
+    const stateCafe = location.state?.focusCafe || null;
+    const focusParam = sp.get("focus"); // /map?focus=123
+
+    const focusKey = stateCafe?.id != null
+      ? `state:${stateCafe.id}`
+      : focusParam
+      ? `qs:${focusParam}`
+      : null;
+
+    if (!focusKey || lastFocusKeyRef.current === focusKey) return;
+    lastFocusKeyRef.current = focusKey;
+
+    const normalize = (c) =>
+      compactCafe({
+        ...c,
+        // 혹시 lat/lon으로 넘어와도 동작하게
+        x: c.x ?? c.lon ?? c.lng ?? c.longitude,
+        y: c.y ?? c.lat ?? c.latitude,
+        url: c.url ?? c.mapUrl ?? c.kakaoMapUrl ?? "",
+        // 사진 키도 들어오면 넘겨주기(PlacePopup에서 보강하긴 하지만 있으면 바로 씀)
+        photos: c.photos ?? c.images_json ?? c.imagesJson ?? c.imageUrls ?? c.images ?? [],
+      });
+
+    const target = stateCafe ? normalize(stateCafe) : null;
+    const targetId = focusParam ?? (target?.id != null ? String(target.id) : null);
+
+    if (target) {
+      // 검색결과가 비어있으면 해당 카페 1개라도 results에 넣어서 마커가 뜨게 함
+      setSearchResults((prev) => {
+        const exists = prev.some((p) => String(p.id) === String(target.id));
+        if (exists) return prev;
+        return prev.length ? prev : [target];
+      });
+    }
+
+    const list = searchResults.length ? searchResults : target ? [target] : [];
+    const idx = targetId ? list.findIndex((p) => String(p.id) === String(targetId)) : -1;
+
+    if (idx >= 0) {
+      setFocusedIndex(idx);
+      openPopup(list[idx]);
+    } else if (target) {
+      setFocusedIndex(0);
+      openPopup(target);
+    }
+
+    setFitBoundsOnResults(false);
+  }, [location.state, location.key, sp, searchResults]);
+
   useEffect(() => {
     return () => {
       // ✅ 상세페이지로 이동한 경우(플래그가 있으면) 유지
@@ -239,6 +309,8 @@ latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, search
       sessionStorage.removeItem(VIEW_KEY);
     };
   }, []);
+
+
 
   // ✅ 지도 뷰 저장 콜백
   const handleViewChange = (view) => {

@@ -2218,7 +2218,7 @@ footer {
 }
 
 .place-modal.pp-sheet{
-  width: min(420px, 96vw);
+  width: min(430px, 96vw);
   border-radius: 18px;
   max-height: calc(100vh - 110px);
   overflow: hidden;

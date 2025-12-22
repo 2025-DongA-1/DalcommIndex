@@ -194,6 +194,54 @@ setInterval(() => {
 
 
 function pickCafeResultFields(cafe) {
+    // ✅ 사진 원본 후보들(데이터셋에 있는 키들 최대한 흡수)
+  const rawPhotos =
+    cafe.photos ??
+    cafe.imageUrls ??
+    cafe.images ??
+    cafe.images_json ??
+    cafe.imagesJson ??
+    null;
+
+  // ✅ 문자열/JSON/배열 모두 처리해서 "URL 배열"로 만들기
+  const photos = (() => {
+    const j = safeJsonParse(rawPhotos, null); // server.js에 이미 있음 :contentReference[oaicite:7]{index=7}
+    let arr = [];
+
+    if (Array.isArray(j)) arr = j;
+    else if (typeof j === "string") {
+      arr = j
+        .split(/[,\n|]/g)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else {
+      arr = [];
+    }
+
+    // ✅ 중복 제거 + 프로토콜 보정 + 이상값 제거
+    const out = [];
+    const set = new Set();
+    for (let u of arr) {
+      if (!u) continue;
+      u = String(u).trim();
+      if (u.startsWith("//")) u = `https:${u}`;
+      if (!/^https?:\/\//i.test(u)) continue;
+      if (set.has(u)) continue;
+      set.add(u);
+      out.push(u);
+    }
+    return out;
+  })();
+
+  // ✅ 대표 1장(PlacePopup이 image_url도 읽습니다 :contentReference[oaicite:8]{index=8})
+  const image_url =
+    cafe.image_url ??
+    cafe.img_url ??
+    cafe.thumbnail ??
+    photos[0] ??
+    firstFromJsonArray(cafe.images_json ?? cafe.imagesJson); // server.js에 이미 있음 :contentReference[oaicite:9]{index=9}
+
+
   return {
     id: cafe.id,
     region: cafe.region,
@@ -212,6 +260,12 @@ function pickCafeResultFields(cafe) {
     parking: cafe.parking,
     x: cafe.x,
     y: cafe.y,
+    
+    // ✅ 추가: 팝업 사진용
+    image_url,
+    photos,
+    // (선택) PlacePopup은 images도 보니 같이 넣어도 좋습니다
+    images: photos,
   };
 }
 

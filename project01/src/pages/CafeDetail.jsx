@@ -13,6 +13,65 @@ function hashCode(str = "") {
   return Math.abs(h);
 }
 
+function normalizePhotoUrls(obj) {
+  if (!obj) return [];
+
+  const raw =
+    obj.photos ||
+    obj.photo_urls ||
+    obj.imageUrls ||
+    obj.images ||
+    obj.image_url ||
+    obj.img_url ||
+    obj.img ||
+    obj.photo ||
+    obj.thumbnail ||
+    "";
+
+  let arr = [];
+
+  // 문자열이 JSON 배열 형태인 경우까지 대응
+  if (Array.isArray(raw)) arr = raw;
+  else if (typeof raw === "string") {
+    const s = raw.trim();
+    if (s.startsWith("[") && s.endsWith("]")) {
+      try {
+        const j = JSON.parse(s);
+        if (Array.isArray(j)) arr = j;
+      } catch {
+        // 무시하고 아래 split로 처리
+      }
+    }
+    if (arr.length === 0) {
+      arr = s
+        .split(/[,\n|]/g)
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+  }
+
+  const uniq = [];
+  const set = new Set();
+
+  for (let u of arr) {
+    if (!u) continue;
+    u = String(u).trim();
+
+    // 프로토콜 없는 //cdn... 형태 보정
+    if (u.startsWith("//")) u = `https:${u}`;
+
+    // 너무 이상한 값은 제외
+    if (!/^https?:\/\//i.test(u)) continue;
+
+    if (set.has(u)) continue;
+    set.add(u);
+    uniq.push(u);
+  }
+
+  return uniq;
+}
+
+
 
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
@@ -146,7 +205,7 @@ export default function CafeDetail() {
       userReviewCount: cafe.userReviewCount ?? 0,
       userRatingAvg: cafe.userRatingAvg ?? null,
       score: cafe.score ?? 0,
-      photos: Array.isArray(cafe.photos) ? cafe.photos : [],
+      photos: normalizePhotoUrls(cafe),
       mapUrl: cafe.mapUrl || "",
       keywordCounts: Array.isArray(cafe.keywordCounts) ? cafe.keywordCounts : [],
     };
@@ -357,9 +416,21 @@ export default function CafeDetail() {
           </div>
 
           <div className="cfd-top-right">
-            <button type="button" className="cfd-action" onClick={() => navigate("/map")} title="지도에서 보기">
+            <button
+              type="button"
+              className="cfd-action"
+              onClick={() => {
+                const id = detail?.id ?? favoriteCafeId;
+                if (!id) return;
+
+                navigate(`/map?focus=${encodeURIComponent(String(id))}`, {
+                  state: { focusCafe: { ...detail, id } },
+                });
+              }}
+            >
               지도
             </button>
+
 
             <button
               type="button"

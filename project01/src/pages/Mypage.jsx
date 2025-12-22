@@ -1,6 +1,6 @@
 // src/pages/Mypage.jsx
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Header from "../components/Header";
 
 const TABS = [
@@ -12,14 +12,40 @@ const TABS = [
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
-async function safeReadBody(res) {
-  const text = await res.text().catch(() => "");
-  if (!text) return {};
+/** ✅ PlacePopup과 동일하게 맞춘 localStorage 즐겨찾기 키 */
+const BOOKMARKS_KEY = "dalcomm_bookmarks_v1";
+
+/** localStorage 안전 읽기 */
+function safeJsonParse(raw, fallback) {
   try {
-    return JSON.parse(text);
+    const v = JSON.parse(raw);
+    return v ?? fallback;
   } catch {
-    return { message: text };
+    return fallback;
   }
+}
+
+/** 즐겨찾기(localStorage) 목록 읽기 */
+function readBookmarks() {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(BOOKMARKS_KEY);
+  const arr = safeJsonParse(raw, []);
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** 즐겨찾기(localStorage) 목록 저장 */
+function writeBookmarks(items) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(items));
+}
+
+/** 즐겨찾기(localStorage)에서 특정 id 제거 */
+function removeBookmarkById(id) {
+  const key = String(id);
+  const list = readBookmarks();
+  const next = list.filter((x) => String(x.id) !== key);
+  writeBookmarks(next);
+  return next;
 }
 
 async function apiFetch(path, { method = "GET", body } = {}) {
@@ -42,10 +68,38 @@ async function apiFetch(path, { method = "GET", body } = {}) {
   return data;
 }
 
+function normalizeTab(v) {
+  const key = String(v || "");
+  return TABS.some((t) => t.key === key) ? key : "profile";
+}
+
 export default function Mypage() {
   const nav = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [tab, setTab] = useState("profile");
+  // ✅ URL (?tab=...) 기반으로 탭 초기화 → 뒤로가기/재방문 시에도 유지
+  const tabFromUrl = normalizeTab(searchParams.get("tab"));
+  const [tab, setTab] = useState(tabFromUrl);
+
+  // URL이 바뀌면(tab 쿼리가 바뀌면) state도 따라가게 동기화
+  useEffect(() => {
+    const next = normalizeTab(searchParams.get("tab"));
+    if (next !== tab) setTab(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const setTabAndUrl = (nextKey) => {
+    const next = normalizeTab(nextKey);
+    setTab(next);
+
+    const sp = new URLSearchParams(searchParams);
+    // profile은 깔끔하게 tab 제거(원하면 유지해도 됨)
+    if (next === "profile") sp.delete("tab");
+    else sp.set("tab", next);
+
+    setSearchParams(sp, { replace: true }); // 히스토리 쌓임 최소화
+  };
+
   const [loading, setLoading] = useState(false);
 
   const [globalMsg, setGlobalMsg] = useState({ type: "", text: "" });
@@ -84,40 +138,49 @@ export default function Mypage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, user]);
 
-const loadMe = async () => {
-  clearMsg();
-  try {
-    setLoading(true);
-    const data = await apiFetch("/api/me");
-    setUser(data.user);
-    setSettings(data.settings);
+  /** ✅ 즐겨찾기 변경 이벤트(팝업에서 저장/해제 시) 감지해서 자동 갱신 */
+  useEffect(() => {
+    if (tab !== "favorites") return;
 
-    setProfileForm((p) => ({
-      ...p,
-      nickname: data.user?.nickname || "",
-      region: data.user?.region || "광주",
-    }));
-  } catch (e) {
-    if (e?.status === 401 || e?.status === 403) {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user");
-      nav("/login");
-      return;
+    const handler = () => setFavorites(readBookmarks());
+    window.addEventListener("dalcomm_bookmarks_changed", handler);
+    return () => window.removeEventListener("dalcomm_bookmarks_changed", handler);
+  }, [tab]);
+
+  const loadMe = async () => {
+    clearMsg();
+    try {
+      setLoading(true);
+      const data = await apiFetch("/api/me");
+      setUser(data.user);
+      setSettings(data.settings);
+
+      setProfileForm((p) => ({
+        ...p,
+        nickname: data.user?.nickname || "",
+        region: data.user?.region || "광주",
+      }));
+    } catch (e) {
+      if (e?.status === 401 || e?.status === 403) {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("user");
+        nav("/login");
+        return;
+      }
+      setError(e?.message || "마이페이지 정보를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
     }
-    setError(e?.message || "마이페이지 정보를 불러오지 못했습니다.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
+  /** ✅ 즐겨찾기: 서버가 아니라 localStorage에서 불러오기 */
   const loadFavorites = async () => {
     clearMsg();
     try {
       setLoading(true);
-      const data = await apiFetch("/api/me/favorites");
-      setFavorites(data.items || []);
+      setFavorites(readBookmarks());
     } catch (e) {
-      setError(e.message);
+      setError(e?.message || "즐겨찾기 불러오기 실패");
     } finally {
       setLoading(false);
     }
@@ -178,32 +241,40 @@ const loadMe = async () => {
     }
   };
 
+  /** ✅ 즐겨찾기 제거: localStorage에서 제거 */
   const onRemoveFavorite = async (id) => {
     clearMsg();
     try {
       setLoading(true);
-      await apiFetch(`/api/me/favorites/${id}`, { method: "DELETE" });
-      setFavorites((prev) => prev.filter((x) => x.id !== id));
+      const next = removeBookmarkById(id);
+      setFavorites(next);
+
+      // 다른 화면(팝업 버튼 상태 등)도 동기화
+      window.dispatchEvent(new Event("dalcomm_bookmarks_changed"));
+
       setInfo("즐겨찾기에서 제거했습니다.");
     } catch (e) {
-      setError(e.message || "즐겨찾기 제거 실패");
+      setError(e?.message || "즐겨찾기 제거 실패");
     } finally {
       setLoading(false);
     }
   };
 
+  /** ✅ 상세 이동: "즐겨찾기 탭에서 왔다"를 URL에 남겨두고 이동 */
   const openFavoriteCafeDetail = (cafe) => {
-  // table 모드: id === cafe_id
-  // json fallback 모드: id가 "123" 같은 숫자 문자열일 수 있음
-  const cafeId = Number(cafe?.id ?? cafe?.cafe_id);
+    // 현재 mypage URL을 /mypage?tab=favorites 로 고정해두면,
+    // 상세 갔다가 뒤로가도 무조건 favorites로 복원됩니다.
+    const sp = new URLSearchParams(searchParams);
+    sp.set("tab", "favorites");
+    setSearchParams(sp, { replace: true });
 
-  if (!Number.isFinite(cafeId)) {
-    setError("상세 페이지로 이동할 cafe_id가 없습니다. (즐겨찾기 데이터를 다시 저장해 주세요)");
-    return;
-  }
-
-  nav(`/cafe/${cafeId}`);
-};
+    const rawId = cafe?.id ?? cafe?.cafe_id ?? cafe?.cafeId;
+    if (rawId === undefined || rawId === null || String(rawId).trim() === "") {
+      setError("상세 페이지로 이동할 cafe id가 없습니다. (즐겨찾기 데이터를 다시 저장해 주세요)");
+      return;
+    }
+    nav(`/cafe/${encodeURIComponent(String(rawId))}`, { state: { cafe } });
+  };
 
   const onDeleteReview = async (id) => {
     clearMsg();
@@ -318,7 +389,7 @@ const loadMe = async () => {
               type="button"
               onClick={() => {
                 clearMsg();
-                setTab(t.key);
+                setTabAndUrl(t.key); // ✅ 버튼 클릭 시 URL과 탭을 동시에 변경
               }}
               style={tabBtn(tab === t.key)}
             >
@@ -328,9 +399,7 @@ const loadMe = async () => {
         </div>
 
         {globalMsg.text && (
-          <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>
-            {globalMsg.text}
-          </div>
+          <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>{globalMsg.text}</div>
         )}
 
         <div className="card mypage-card" style={{ marginTop: 14 }}>
@@ -385,15 +454,15 @@ const loadMe = async () => {
                   <input
                     type="password"
                     value={profileForm.newPasswordConfirm}
-                    onChange={(e) => setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))}
+                    onChange={(e) =>
+                      setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))
+                    }
                     placeholder="변경 시에만 입력"
                   />
                 </div>
 
                 {profileMsg.text && (
-                  <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>
-                    {profileMsg.text}
-                  </div>
+                  <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>{profileMsg.text}</div>
                 )}
 
                 <button className="auth-submit-btn" disabled={loading}>
@@ -414,7 +483,7 @@ const loadMe = async () => {
                 <div className="mypage-fav-list">
                   {favorites.map((cafe) => (
                     <div
-                      key={cafe.id}
+                      key={String(cafe.id)}
                       className="mypage-fav-card is-clickable"
                       role="button"
                       tabIndex={0}
@@ -430,7 +499,14 @@ const loadMe = async () => {
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div>
                           <div style={{ fontWeight: 700 }}>{cafe.name}</div>
-                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region}</div>
+                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                            {cafe.region || "-"}
+                          </div>
+                          {cafe.address ? (
+                            <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                              {cafe.address}
+                            </div>
+                          ) : null}
                         </div>
 
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -462,7 +538,9 @@ const loadMe = async () => {
 
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                         {(cafe.tags || []).map((t) => (
-                          <span key={t} className="chip">{t}</span>
+                          <span key={t} className="chip">
+                            {t}
+                          </span>
                         ))}
                       </div>
                     </div>
@@ -492,10 +570,20 @@ const loadMe = async () => {
                         </div>
 
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button type="button" style={btnGhost} disabled={loading} onClick={() => onEditReview(r.id)}>
+                          <button
+                            type="button"
+                            style={btnGhost}
+                            disabled={loading}
+                            onClick={() => onEditReview(r.id)}
+                          >
                             수정
                           </button>
-                          <button type="button" style={btnDangerGhost} disabled={loading} onClick={() => onDeleteReview(r.id)}>
+                          <button
+                            type="button"
+                            style={btnDangerGhost}
+                            disabled={loading}
+                            onClick={() => onDeleteReview(r.id)}
+                          >
                             삭제
                           </button>
                         </div>
@@ -518,10 +606,19 @@ const loadMe = async () => {
 
               <div style={{ display: "grid", gap: 10 }}>
                 <div style={itemCard}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
                     <div>
                       <div style={{ fontWeight: 700 }}>마케팅 수신</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>이벤트/소식 알림을 받습니다.</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                        이벤트/소식 알림을 받습니다.
+                      </div>
                     </div>
                     <input
                       type="checkbox"
@@ -532,15 +629,26 @@ const loadMe = async () => {
                 </div>
 
                 <div style={itemCard}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
                     <div>
                       <div style={{ fontWeight: 700 }}>프로필 공개</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>리뷰에 닉네임 표시 여부</div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
+                        리뷰에 닉네임 표시 여부
+                      </div>
                     </div>
                     <input
                       type="checkbox"
                       checked={settings.profilePublic}
-                      onChange={(e) => setSettings((s) => ({ ...s, profilePublic: e.target.checked }))}
+                      onChange={(e) =>
+                        setSettings((s) => ({ ...s, profilePublic: e.target.checked }))
+                      }
                     />
                   </div>
                 </div>
