@@ -128,6 +128,7 @@ function compactCafe(c) {
 }
 
 export default function Map() {
+  const [sidebarPrefs, setSidebarPrefs] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchResults, setSearchResults] = useState([]);
   const [focusedIndex, setFocusedIndex] = useState(null);
@@ -149,7 +150,7 @@ export default function Map() {
   const restoringRef = useRef(true);
   // ✅ 언마운트 직전에도 최신 state를 저장할 수 있게 ref로 보관
   const latestRef = useRef(null);
-  latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults };
+ latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults, sidebarPrefs };
 
   const lastFocusKeyRef = useRef(null);
 
@@ -203,6 +204,7 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
       setFocusedIndex(savedState.focusedIndex ?? null);
       setHasSearched(!!savedState.hasSearched);
       setTopQuery(savedState.topQuery ?? "");
+      setSidebarPrefs(savedState.sidebarPrefs ?? null);
     }
 
     if (savedView && typeof savedView.lat === "number" && typeof savedView.lng === "number") {
@@ -225,12 +227,13 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
         topQuery,
         focusedIndex,
         searchResults: (searchResults || []).map(compactCafe),
+        sidebarPrefs: s.sidebarPrefs ?? null,  
       };
       sessionStorage.setItem(STORE_KEY, JSON.stringify(payload));
     } catch (e) {
       console.warn("[Map] sessionStorage save failed:", e);
     }
-  }, [isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults]);
+    }, [isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults, sidebarPrefs]);
 
     useEffect(() => {
     const stateCafe = location.state?.focusCafe || null;
@@ -296,6 +299,7 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
           topQuery: s.topQuery,
           focusedIndex: s.focusedIndex,
           searchResults: (s.searchResults || []).map(compactCafe),
+          sidebarPrefs: s.sidebarPrefs ?? null,
         };
         sessionStorage.setItem(STORE_KEY, JSON.stringify(payload));
       } catch (e) {}
@@ -321,6 +325,7 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
 
   const handleSearch = async (prefs) => {
     try {
+      setSidebarPrefs(prefs || null);
       const res = await fetch(filterUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -397,11 +402,13 @@ const handleTopSearch = async () => {
           isOpen={isSidebarOpen}
           toggleSidebar={toggleSidebar}
           onSearch={handleSearch}
+          initialPrefs={sidebarPrefs}
           onReset={() => {
             setSearchResults([]);
             setFocusedIndex(null);
             setHasSearched(false);
             closePopup();
+           setSidebarPrefs(null);
             sessionStorage.removeItem(STORE_KEY);
             sessionStorage.removeItem(VIEW_KEY);
           }}

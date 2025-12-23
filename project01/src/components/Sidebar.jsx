@@ -1,5 +1,5 @@
 // src/components/Sidebar.jsx (검색버튼 가림 현상 해결 버전)
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 // ✅ 지역 값(표시용) -> 서버/데이터 매칭용(여러 표기)으로 확장
 const REGION_ALIASES = {
@@ -24,7 +24,7 @@ const GWANGJU_SUB_OPTIONS = [
   { label: "광산구", value: "광주 광산구" },
 ];
 
-const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
+const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => {
   const filters = useMemo(
     () => ({
       지역: ["광주", "나주", "담양", "화순"],
@@ -43,6 +43,40 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset }) => {
     "방문 목적": new Set(),
     "필수 조건": new Set(),
   }));
+
+  useEffect(() => {
+  if (!initialPrefs) return;
+
+  // ✅ region은 alias로 넘어올 수 있으니 canonical(광주 전체/광주 동구/나주...)로 되돌림
+  const regionArr = Array.isArray(initialPrefs.region) ? initialPrefs.region : [];
+
+  const regionSet = new Set();
+
+  // 1) aliases로 canonical 찾기
+  for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
+    if (regionArr.some((r) => aliases.includes(r) || r === canonical)) {
+      regionSet.add(canonical);
+    }
+  }
+
+  // 2) 혹시 expand 이전의 값이 그대로 들어와도 대비
+  regionArr.forEach((r) => {
+    if (r === "광주" || r === "광주광역시" || r === "gwangju") regionSet.add("광주 전체");
+  });
+
+  setSelected({
+    지역: regionSet,
+    분위기: new Set(initialPrefs.atmosphere || []),
+    메뉴: new Set(initialPrefs.menu || []),
+    "방문 목적": new Set(initialPrefs.purpose || []),
+    "필수 조건": new Set(initialPrefs.required || []),
+  });
+
+  // ✅ 광주 관련 선택이 있으면 하위 구역 펼쳐놓기(선택)
+  const hasGwangju = Array.from(regionSet).some((v) => v === "광주 전체" || String(v).startsWith("광주 "));
+  if (hasGwangju) setIsGwangjuOpen(true);
+}, [initialPrefs]);
+
 
   const toggleOption = (group, option) => {
     setSelected((prev) => {
