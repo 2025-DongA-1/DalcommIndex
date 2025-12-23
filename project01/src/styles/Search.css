@@ -331,3 +331,9 @@
   opacity:.4;
   cursor:not-allowed;
 }
+
+.why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -496,7 +496,7 @@ app.get("/api/cafes", async (req, res) => {
       const userReviewCount = ua.count || 0;
       const userRatingAvg = ua.avg == null ? null : Math.round(Number(ua.avg) * 10) / 10;
 
-      const combinedReviewCount = extReviewCount + userReviewCount;
+      const combinedReviewCount = userReviewCount;
 
 
       const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
@@ -632,7 +632,7 @@ app.get("/api/cafes", async (req, res) => {
       }
 
       const extReviewCount = Number(r.review_count_total || 0) || 0;
-      const combinedReviewCount = extReviewCount + userReviewCount;
+      const combinedReviewCount = userReviewCount;
 
       const scoreBy = safeJsonParse(r.score_by_category_json, {});
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
