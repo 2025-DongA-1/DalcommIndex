@@ -1249,7 +1249,7 @@ footer {
 }
 
 /* 카드(버튼) */
-.result-card {
+.result-card1 {
   width: 100%;
   border: 1px solid #ffd1df;
   text-align: left;
@@ -1261,11 +1261,11 @@ footer {
   width: 100%;
 }
 
-.result-card:hover {
+.result-card1:hover {
   background: #ffeff5;
 }
 
-.result-card.active {
+.result-card1.active {
   outline: 2px solid rgba(255, 75, 130, 0.35);
   background: #fff7fb;
 }

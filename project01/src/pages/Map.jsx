@@ -540,7 +540,7 @@ const handleTopSearch = async () => {
                         <button
                           key={cafe?.id || `${cafe?.name}-${idx}`}
                           type="button"
-                          className={`result-card ${isActive ? "active" : ""}`}
+                          className={`result-card1 ${isActive ? "active" : ""}`}
                           onClick={() => {
                             if (hasCoord) setFocusedIndex(idx);
                             else setFocusedIndex(null);
