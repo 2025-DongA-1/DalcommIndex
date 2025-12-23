@@ -640,12 +640,14 @@ export default function CafeDetail() {
                    <WordCloud
                       items={detail.keywordCounts}
                       onClickWord={(w) => {
-                        const params = new URLSearchParams();
-                        // region을 search 필터에 같이 넘기고 싶으면
-                        const regionKey = toRegionKey(detail.region);
-                        if (regionKey) params.set("region", regionKey); 
-                        params.set("q", w);
-                        navigate(`/search?${params.toString()}`);
+                      const keyword = String(w ?? "").replace(/^#/, "").trim();
+                      if (!keyword) return;
+
+                      const params = new URLSearchParams();
+                       params.set("q", keyword);     // ✅ 키워드만 넘김 (region은 안 넘김)
+                      // params.set("page", "1");   // 원하면 항상 1페이지부터
+
+                      navigate(`/search?${params.toString()}`);
                       }}
                       initialLimit={13}
                     />
