@@ -51,6 +51,130 @@ async function usersHasColumn(col) {
   return ok;
 }
 
+/** ====== keyword_dict 캐시(카테고리별) ====== */
+const __kwCache = new Map();
+const KW_CACHE_TTL_MS = 10 * 60 * 1000; // 10분
+
+async function getActiveKeywordDict(category) {
+  const key = String(category || "").trim();
+  if (!key) return [];
+
+  const now = Date.now();
+  const cached = __kwCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.items;
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT canonical_keyword, synonyms_json, weight
+       FROM keyword_dict
+       WHERE category = ? AND is_active = 1
+       ORDER BY weight DESC, canonical_keyword ASC`,
+      [key]
+    );
+
+    const items = (rows || [])
+      .map((r) => {
+        const canonical = normalizeStr(r.canonical_keyword);
+        const synRaw = safeJsonParse(r.synonyms_json, []);
+        const synArr = Array.isArray(synRaw) ? synRaw : [];
+        const synonyms = uniq([canonical, ...synArr].map((x) => normalizeStr(x)).filter(Boolean));
+        return {
+          canonical,
+          synonyms,
+          weight: Number(r.weight ?? 1) || 1,
+        };
+      })
+      .filter((x) => x.canonical);
+
+    __kwCache.set(key, { items, expiresAt: now + KW_CACHE_TTL_MS });
+    return items;
+  } catch (e) {
+    // 테이블/권한 문제 등: 빈 배열로 폴백(짧게 캐시)
+    __kwCache.set(key, { items: [], expiresAt: now + 30 * 1000 });
+    return [];
+  }
+}
+
+
+function mergeKeywordDicts(...lists) {
+  const m = new Map();
+
+  const push = (it) => {
+    const canonical = normalizeStr(it?.canonical);
+    if (!canonical) return;
+
+    const prev = m.get(canonical);
+    if (!prev) {
+      m.set(canonical, {
+        canonical,
+        synonyms: Array.isArray(it.synonyms) ? it.synonyms : [canonical],
+        weight: Number(it.weight ?? 1) || 1,
+      });
+      return;
+    }
+
+    const prevSyn = Array.isArray(prev.synonyms) ? prev.synonyms : [canonical];
+    const nextSyn = Array.isArray(it.synonyms) ? it.synonyms : [canonical];
+    const synonyms = uniq([...prevSyn, ...nextSyn].map((x) => normalizeStr(x)).filter(Boolean));
+    const weight = Math.max(Number(prev.weight ?? 1) || 1, Number(it.weight ?? 1) || 1);
+
+    m.set(canonical, { canonical, synonyms, weight });
+  };
+
+  for (const list of lists) {
+    const arr = Array.isArray(list) ? list : [];
+    for (const it of arr) push(it);
+  }
+
+  return [...m.values()].sort(
+    (a, b) => (Number(b.weight ?? 1) - Number(a.weight ?? 1)) || String(a.canonical).localeCompare(String(b.canonical), "ko")
+  );
+}
+
+function buildTokenSet(topKeywords = [], menuTags = [], recoTags = []) {
+  const raw = [...topKeywords, ...menuTags, ...recoTags]
+    .map((x) => normalizeStr(x))
+    .filter(Boolean);
+
+  const set = new Set();
+  for (const t of raw) {
+    // 토큰 내부에 구분자가 섞여있을 수 있어 추가 분해
+    const parts = String(t).split(/[|,·/()\[\]\s]+/g);
+    for (const p of parts) {
+      const v = normalizeStr(p);
+      if (v) set.add(v);
+    }
+  }
+  return set;
+}
+
+function matchCanonicalsFromDict(tokenSet, dictItems, maxItems = 8) {
+  if (!tokenSet || !dictItems?.length) return [];
+  const out = [];
+
+  for (const it of dictItems) {
+    const syns = Array.isArray(it.synonyms) ? it.synonyms : [];
+    let hit = false;
+
+    for (const s of syns) {
+      const ss = normalizeStr(s);
+      if (!ss) continue;
+
+      // ✅ 정확 일치만(부분 문자열 매칭 금지) → "이드" 같은 오탐 방지
+      if (tokenSet.has(ss)) {
+        hit = true;
+        break;
+      }
+    }
+
+    if (hit) out.push(it.canonical);
+    if (out.length >= maxItems) break;
+  }
+
+  return uniq(out);
+}
+
+
 /** ✅ 전역(공유) 데이터셋 변수: 반드시 선언되어야 함 */
 let cafes = [];
 let cafesLoadedFrom = null;
@@ -365,8 +489,59 @@ function splitTagsFromScoreBy(scoreBy) {
   return { menuTags, recoTags, parking };
 }
 
-function deriveThemesAndDesserts({ topKeywords = [], menuTags = [], recoTags = [] }) {
-  const hay = [...topKeywords, ...menuTags, ...recoTags].join(" ");
+function tokensFromKeywordCounts(keywordCountsRaw, maxItems = 80) {
+  const pairs = [];
+
+  // 1) 배열 형태: [["말차",12], ...] 또는 [{text,value}, ...]
+  if (Array.isArray(keywordCountsRaw)) {
+    for (const it of keywordCountsRaw) {
+      if (!it) continue;
+
+      if (Array.isArray(it) && it.length >= 2) {
+        const text = normalizeStr(it[0]);
+        const value = Number(it[1]);
+        if (text && Number.isFinite(value) && value > 0) pairs.push([text, value]);
+        continue;
+      }
+
+      if (typeof it === "object") {
+        const text = normalizeStr(it.text ?? it.word ?? it.token ?? it.keyword);
+        const value = Number(it.value ?? it.count ?? it.cnt ?? it.freq);
+        if (text && Number.isFinite(value) && value > 0) pairs.push([text, value]);
+      }
+    }
+  }
+
+  // 2) 객체 형태: {"말차":12, ...}
+  if (
+    !pairs.length &&
+    keywordCountsRaw &&
+    typeof keywordCountsRaw === "object" &&
+    !Array.isArray(keywordCountsRaw)
+  ) {
+    for (const [k, v] of Object.entries(keywordCountsRaw)) {
+      const text = normalizeStr(k);
+      const value = Number(v);
+      if (text && Number.isFinite(value) && value > 0) pairs.push([text, value]);
+    }
+  }
+
+  pairs.sort((a, b) => (b[1] || 0) - (a[1] || 0));
+
+  const out = [];
+  for (const [text] of pairs) {
+    if (!text) continue;
+    out.push(text);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+
+
+function deriveThemesAndDesserts({ topKeywords = [], menuTags = [], recoTags = [], dessertDict = [] }) {
+  const tokenSet = buildTokenSet(topKeywords, menuTags, recoTags);
+  const hay = Array.from(tokenSet).join(" ");
   const themes = ["dessert"];
 
   if (/(사진|포토|포토존|인스타|감성)/.test(hay)) themes.push("photo");
@@ -375,8 +550,15 @@ function deriveThemesAndDesserts({ topKeywords = [], menuTags = [], recoTags = [
   if (/(가족|아이|키즈|유모차)/.test(hay)) themes.push("family");
   if (/(주문|레터링|커스텀|케이크)/.test(hay)) themes.push("cake");
 
-  const DESSERT_CANDIDATES = ["케이크", "마카롱", "말차", "소금빵", "크로플", "휘낭시에", "빙수", "푸딩"];
-  const desserts = DESSERT_CANDIDATES.filter((d) => hay.includes(d));
+  // ✅ DB keyword_dict(디저트) 기반 추출
+  let desserts = [];
+  if (Array.isArray(dessertDict) && dessertDict.length) {
+    desserts = matchCanonicalsFromDict(tokenSet, dessertDict, 8);
+  } else {
+    // 폴백(이전 하드코딩 로직)
+    const DESSERT_CANDIDATES = ["케이크", "마카롱", "말차", "소금빵", "크로플", "휘낭시에", "빙수", "푸딩"];
+    desserts = DESSERT_CANDIDATES.filter((d) => hay.includes(d));
+  }
 
   return { themes: Array.from(new Set(themes)), desserts };
 }
@@ -397,7 +579,8 @@ async function queryCafesWithLatestStats() {
       s.review_count_recent,
       s.last_mentioned_at,
       s.score_by_category_json,
-      s.top_keywords_json
+      s.top_keywords_json,
+      s.keyword_counts_json
     FROM cafes c
     LEFT JOIN (
       SELECT s1.*
@@ -449,6 +632,42 @@ async function bootstrap() {
     })
   );
 
+
+/** ✅ 키워드 사전 조회(디버그/관리용) */
+app.get("/api/keywords", async (req, res) => {
+  try {
+    if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+      return res.status(503).json({ message: "DB 설정이 필요합니다." });
+    }
+
+    const category = normalizeStr(req.query.category || "");
+    const allowed = new Set(["atmosphere", "taste", "purpose", "dessert", "drink", "meal"]);
+    if (category && !allowed.has(category)) {
+      return res.status(400).json({ message: "category 값이 올바르지 않습니다." });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit || 500), 1), 2000);
+
+    const sql = `
+      SELECT keyword_id, category, canonical_keyword, synonyms_json, weight, is_active, updated_at
+      FROM keyword_dict
+      WHERE is_active = 1
+      ${category ? "AND category = ?" : ""}
+      ORDER BY category ASC, canonical_keyword ASC
+      LIMIT ?
+    `;
+
+    const params = category ? [category, limit] : [limit];
+    const [rows] = await pool.query(sql, params);
+
+    return res.json({ items: rows || [] });
+  } catch (e) {
+    console.error("[api/keywords]", e);
+    return res.status(500).json({ message: "키워드 조회 실패" });
+  }
+});
+
+
   /** ✅ 검색 페이지용: 목록 */
 app.get("/api/cafes", async (req, res) => {
   try {
@@ -465,6 +684,13 @@ app.get("/api/cafes", async (req, res) => {
     const sort = normalizeStr(req.query.sort || "relevance");
 
     const rows = await queryCafesWithLatestStats();
+
+    // ✅ keyword_dict(디저트) 로드(요청당 1회, 내부 캐시)
+    const dessertDict = mergeKeywordDicts(
+      await getActiveKeywordDict("dessert"),
+      await getActiveKeywordDict("drink"),
+      await getActiveKeywordDict("meal")
+    );
 
     // ✅ 회원리뷰(달콤인덱스) 집계: cafe_id별 count/avg
     let userAgg = new Map();
@@ -490,6 +716,10 @@ app.get("/api/cafes", async (req, res) => {
       const scoreBy = safeJsonParse(r.score_by_category_json, {});
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
+// ✅ keyword_counts_json(상대적으로 더 많은 토큰)도 같이 반영해서 디저트 매칭 커버리지↑
+const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
+const keywordCountTokens = tokensFromKeywordCounts(keywordCountsRaw, 80);
+const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const extReviewCount = Number(r.review_count_total || 0) || 0;
       const ua = userAgg.get(Number(r.cafe_id)) || { count: 0, avg: null };
 
@@ -501,9 +731,10 @@ app.get("/api/cafes", async (req, res) => {
 
       const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
       const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
-        topKeywords: topKeywordsArr,
+        topKeywords: keywordsForMatch,
         menuTags,
         recoTags,
+        dessertDict,
       });
 
       const regionKey = classifyRegionKey({ region: r.region, address: r.address });
