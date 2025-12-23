@@ -2,31 +2,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-/** 즐겨찾기 저장소(localStorage) 키 */
-const BOOKMARKS_KEY = "dalcomm_bookmarks_v1";
 
-/** 안전한 JSON 파싱 */
-function safeJsonParse(raw, fallback) {
-  try {
-    const v = JSON.parse(raw);
-    return v ?? fallback;
-  } catch {
-    return fallback;
+const API_BASE = import.meta.env.VITE_API_BASE || ""; // ✅ 추가: 서버 API base
+const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 추가: 이벤트명 통일
+
+async function apiFetch(path, { method = "GET", body } = {}) {
+  const token = localStorage.getItem("accessToken");
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.message || "요청 실패");
+    err.status = res.status;
+    throw err;
   }
-}
-
-/** 즐겨찾기 목록 읽기 (배열: [{id, name, address, region, x, y, url, imageUrl, savedAt}]) */
-function readBookmarks() {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(BOOKMARKS_KEY);
-  const arr = safeJsonParse(raw, []);
-  return Array.isArray(arr) ? arr : [];
-}
-
-/** 즐겨찾기 목록 저장 */
-function writeBookmarks(items) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(items));
+  return data;
 }
 
 /** place에서 대표 이미지 URL 1개 뽑기 */
@@ -52,47 +49,13 @@ function pickFirstImageUrl(place) {
   return "";
 }
 
-/** 특정 id가 즐겨찾기인지 */
-function isBookmarked(id) {
-  const list = readBookmarks();
-  return list.some((b) => String(b.id) === String(id));
-}
-
-/** 즐겨찾기 토글: 추가/삭제 후, 토글 결과(saved=true/false) 반환 */
-function toggleBookmark(place, cafeKey) {
-  const id = String(cafeKey);
-  const list = readBookmarks();
-  const exists = list.some((b) => String(b.id) === id);
-
-  let next;
-  if (exists) {
-    next = list.filter((b) => String(b.id) !== id);
-  } else {
-    const item = {
-      id,
-      name: place?.name || "카페 이름",
-      address: place?.address || "",
-      region: place?.region || "",
-      x: place?.x ?? null,
-      y: place?.y ?? null,
-      url: place?.url || "",
-      imageUrl: pickFirstImageUrl(place),
-      savedAt: new Date().toISOString(),
-    };
-    next = [item, ...list];
-  }
-
-  writeBookmarks(next);
-  return !exists; // 토글 후 saved 상태
-}
-
 export default function PlacePopup({ open, place, onClose }) {
   const navigate = useNavigate();
 
   const [tab, setTab] = useState("home"); // home | review | photo | info
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // ✅ 카페별 즐겨찾기 상태
+  // ✅ 즐겨찾기 상태(서버 기준)
   const [saved, setSaved] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
 
@@ -102,17 +65,15 @@ export default function PlacePopup({ open, place, onClose }) {
   const [reviewCount, setReviewCount] = useState(0);
   const [reviewItems, setReviewItems] = useState([]);
 
-  const API_BASE = import.meta.env.VITE_API_BASE || "";
-  const api = (path) => (API_BASE ? `${API_BASE}${path}` : path);
+  // ✅ API URL
+  const REVIEWS_URL = `${API_BASE}/api/reviews`;
 
-  const name = place?.name || "카페 이름";
-  const cafeIdRaw = place?.id ?? place?.cafe_id ?? place?.cafeId ?? place?.cafeID ?? name;
-  const cafeKey = String(cafeIdRaw); // ✅ 즐겨찾기 구분 키
-  const cafeId = encodeURIComponent(String(cafeIdRaw));
-
-  // 필요하면 여기만 프로젝트에 맞게 바꾸세요 (예: "/api/reviews")
-  const REVIEWS_URL = api(`/api/cafes/${cafeId}/user-reviews`);
-
+  // ✅ 안전한 카페 ID 계산
+  const name = place?.name || place?.cafe_name || place?.title || "카페";
+  const cafeIdRaw = place?.cafe_id ?? place?.cafeId ?? place?.id ?? place?.place_id;
+  const cafeId = cafeIdRaw != null ? String(cafeIdRaw) : "";
+  const favoriteCafeId = Number(cafeIdRaw); // ✅ 서버 favorites는 숫자 id를 기대하는 경우가 많음
+  const hasValidFavoriteId = Number.isFinite(favoriteCafeId);
   /** ESC 닫기 */
   useEffect(() => {
     if (!open) return;
@@ -138,22 +99,66 @@ export default function PlacePopup({ open, place, onClose }) {
     }
   }, [open]);
 
-  /** ✅ (중요) place/cafeKey가 바뀔 때마다 해당 카페의 즐겨찾기 상태를 다시 읽어서 반영 */
   useEffect(() => {
     if (!open || !place) return;
-    setSaved(isBookmarked(cafeKey));
-  }, [open, place, cafeKey]);
 
-  /** ✅ 다른 화면에서 즐겨찾기 변경되면(이벤트) 현재 버튼도 동기화 */
-  useEffect(() => {
-    if (!open) return;
-    const handler = () => {
-      if (!place) return;
-      setSaved(isBookmarked(cafeKey));
+    const token = localStorage.getItem("accessToken");
+    if (!token || !hasValidFavoriteId) {
+      setSaved(false);
+      return;
+    }
+
+    let alive = true;
+    (async () => {
+      try {
+        const data = await apiFetch("/api/me/favorites");
+        const items = Array.isArray(data.items)
+          ? data.items
+          : Array.isArray(data.favorites)
+          ? data.favorites
+          : [];
+        const exists = items.some((x) => Number(x.id ?? x.cafe_id ?? x.cafeId) === favoriteCafeId);
+        if (alive) setSaved(exists);
+      } catch {
+        if (alive) setSaved(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
     };
-    window.addEventListener("dalcomm_bookmarks_changed", handler);
-    return () => window.removeEventListener("dalcomm_bookmarks_changed", handler);
-  }, [open, place, cafeKey]);
+  }, [open, place, hasValidFavoriteId, favoriteCafeId]);
+
+  /**
+   * ✅ 수정: 다른 화면에서 즐겨찾기가 변경되면(이벤트) 팝업 버튼도 서버 기준으로 재동기화
+   */
+  useEffect(() => {
+    if (!open || !place) return;
+
+    const handler = async () => {
+      const token = localStorage.getItem("accessToken");
+      if (!token || !hasValidFavoriteId) {
+        setSaved(false);
+        return;
+      }
+      try {
+        const data = await apiFetch("/api/me/favorites");
+        const items = Array.isArray(data.items)
+          ? data.items
+          : Array.isArray(data.favorites)
+          ? data.favorites
+          : [];
+        const exists = items.some((x) => Number(x.id ?? x.cafe_id ?? x.cafeId) === favoriteCafeId);
+        setSaved(exists);
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener(FAVORITES_EVENT, handler);
+    return () => window.removeEventListener(FAVORITES_EVENT, handler);
+  }, [open, place, hasValidFavoriteId, favoriteCafeId]);
+
 
   const photos = useMemo(() => {
     if (!place) return [];
@@ -189,15 +194,52 @@ export default function PlacePopup({ open, place, onClose }) {
   }, [place]);
 
   /** ✅ 저장 버튼 클릭 */
-  const onToggleSave = () => {
+  const onToggleSave = async () => {
     if (!place || saveLoading) return;
+
+    const token = localStorage.getItem("accessToken");
+    if (!token) {
+      navigate("/login"); // ✅ 수정: 팝업에서도 상세페이지처럼 로그인 필요
+      return;
+    }
+
+    if (!hasValidFavoriteId) {
+      alert("이 카페의 ID가 올바르지 않아 즐겨찾기를 저장할 수 없습니다.");
+      return;
+    }
+
     setSaveLoading(true);
     try {
-      const nextSaved = toggleBookmark(place, cafeKey);
-      setSaved(nextSaved);
+      if (!saved) {
+        await apiFetch("/api/me/favorites", {
+          method: "POST",
+          body: {
+            cafe_id: favoriteCafeId, // ✅ 수정: 서버가 기대하는 키로 전송
+            name: place?.name || name,
+            region: place?.region || "",
+            address: place?.address || "",
+            tags: Array.isArray(place?.tags) ? place.tags : [],
+            imageUrl: pickFirstImageUrl(place),
+          },
+        });
+        setSaved(true);
+      } else {
+        await apiFetch(`/api/me/favorites/${encodeURIComponent(String(favoriteCafeId))}`, {
+          method: "DELETE",
+        });
+        setSaved(false);
+      }
 
-      // 다른 컴포넌트도 즐겨찾기 변경 감지 가능
-      window.dispatchEvent(new Event("dalcomm_bookmarks_changed"));
+      // ✅ 수정: 마이페이지/다른 화면이 즉시 갱신되도록 이벤트 통일 발행
+      window.dispatchEvent(new Event(FAVORITES_EVENT));
+    } catch (e) {
+      if (e?.status === 401 || e?.status === 403) {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("user");
+        navigate("/login");
+        return;
+      }
+      alert(e?.message || "즐겨찾기 처리 중 오류가 발생했습니다.");
     } finally {
       setSaveLoading(false);
     }

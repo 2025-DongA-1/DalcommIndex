@@ -647,6 +647,7 @@ export default function CafeDetail() {
                         params.set("q", w);
                         navigate(`/search?${params.toString()}`);
                       }}
+                      initialLimit={13}
                     />
                 </div>
 

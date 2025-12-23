@@ -11,42 +11,7 @@ const TABS = [
 ];
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
-
-/** ✅ PlacePopup과 동일하게 맞춘 localStorage 즐겨찾기 키 */
-const BOOKMARKS_KEY = "dalcomm_bookmarks_v1";
-
-/** localStorage 안전 읽기 */
-function safeJsonParse(raw, fallback) {
-  try {
-    const v = JSON.parse(raw);
-    return v ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-/** 즐겨찾기(localStorage) 목록 읽기 */
-function readBookmarks() {
-  if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(BOOKMARKS_KEY);
-  const arr = safeJsonParse(raw, []);
-  return Array.isArray(arr) ? arr : [];
-}
-
-/** 즐겨찾기(localStorage) 목록 저장 */
-function writeBookmarks(items) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(items));
-}
-
-/** 즐겨찾기(localStorage)에서 특정 id 제거 */
-function removeBookmarkById(id) {
-  const key = String(id);
-  const list = readBookmarks();
-  const next = list.filter((x) => String(x.id) !== key);
-  writeBookmarks(next);
-  return next;
-}
+const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 수정: 이벤트명 통일
 
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
@@ -77,11 +42,9 @@ export default function Mypage() {
   const nav = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // ✅ URL (?tab=...) 기반으로 탭 초기화 → 뒤로가기/재방문 시에도 유지
   const tabFromUrl = normalizeTab(searchParams.get("tab"));
   const [tab, setTab] = useState(tabFromUrl);
 
-  // URL이 바뀌면(tab 쿼리가 바뀌면) state도 따라가게 동기화
   useEffect(() => {
     const next = normalizeTab(searchParams.get("tab"));
     if (next !== tab) setTab(next);
@@ -93,11 +56,10 @@ export default function Mypage() {
     setTab(next);
 
     const sp = new URLSearchParams(searchParams);
-    // profile은 깔끔하게 tab 제거(원하면 유지해도 됨)
     if (next === "profile") sp.delete("tab");
     else sp.set("tab", next);
 
-    setSearchParams(sp, { replace: true }); // 히스토리 쌓임 최소화
+    setSearchParams(sp, { replace: true });
   };
 
   const [loading, setLoading] = useState(false);
@@ -138,14 +100,17 @@ export default function Mypage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, user]);
 
-  /** ✅ 즐겨찾기 변경 이벤트(팝업에서 저장/해제 시) 감지해서 자동 갱신 */
+  /**
+   * ✅ 수정: 즐겨찾기 변경 이벤트를 받으면 DB에서 다시 로드
+   * (PlacePopup/CafeDetail에서 즐겨찾기 추가/삭제 후 dispatch)
+   */
   useEffect(() => {
     if (tab !== "favorites") return;
 
-    const handler = () => setFavorites(readBookmarks());
-    window.addEventListener("dalcomm_bookmarks_changed", handler);
-    return () => window.removeEventListener("dalcomm_bookmarks_changed", handler);
-  }, [tab]);
+    const handler = () => loadFavorites();
+    window.addEventListener(FAVORITES_EVENT, handler);
+    return () => window.removeEventListener(FAVORITES_EVENT, handler);
+  }, [tab, user]); // user 포함(로그인/세션 바뀔 때 안전)
 
   const loadMe = async () => {
     clearMsg();
@@ -173,12 +138,29 @@ export default function Mypage() {
     }
   };
 
-  /** ✅ 즐겨찾기: 서버가 아니라 localStorage에서 불러오기 */
+  /**
+   * ✅ 수정: 즐겨찾기 로딩을 서버(/api/me/favorites) 기준으로 통일
+   */
   const loadFavorites = async () => {
     clearMsg();
     try {
       setLoading(true);
-      setFavorites(readBookmarks());
+      const data = await apiFetch("/api/me/favorites");
+
+      const items =
+        Array.isArray(data.items) ? data.items : Array.isArray(data.favorites) ? data.favorites : [];
+
+      const normalized = items.map((x) => {
+        const id = x.id ?? x.cafe_id ?? x.cafeId;
+        return {
+          ...x,
+          id,
+          cafe_id: id,
+          tags: Array.isArray(x.tags) ? x.tags : [],
+        };
+      });
+
+      setFavorites(normalized);
     } catch (e) {
       setError(e?.message || "즐겨찾기 불러오기 실패");
     } finally {
@@ -241,17 +223,18 @@ export default function Mypage() {
     }
   };
 
-  /** ✅ 즐겨찾기 제거: localStorage에서 제거 */
+  /**
+   * ✅ 수정: 즐겨찾기 제거도 서버 기준으로 통일
+   */
   const onRemoveFavorite = async (id) => {
     clearMsg();
     try {
       setLoading(true);
-      const next = removeBookmarkById(id);
-      setFavorites(next);
+      await apiFetch(`/api/me/favorites/${encodeURIComponent(String(id))}`, { method: "DELETE" });
+      await loadFavorites();
 
       // 다른 화면(팝업 버튼 상태 등)도 동기화
-      window.dispatchEvent(new Event("dalcomm_bookmarks_changed"));
-
+      window.dispatchEvent(new Event(FAVORITES_EVENT)); // ✅ 수정
       setInfo("즐겨찾기에서 제거했습니다.");
     } catch (e) {
       setError(e?.message || "즐겨찾기 제거 실패");
@@ -260,10 +243,7 @@ export default function Mypage() {
     }
   };
 
-  /** ✅ 상세 이동: "즐겨찾기 탭에서 왔다"를 URL에 남겨두고 이동 */
   const openFavoriteCafeDetail = (cafe) => {
-    // 현재 mypage URL을 /mypage?tab=favorites 로 고정해두면,
-    // 상세 갔다가 뒤로가도 무조건 favorites로 복원됩니다.
     const sp = new URLSearchParams(searchParams);
     sp.set("tab", "favorites");
     setSearchParams(sp, { replace: true });
@@ -315,9 +295,7 @@ export default function Mypage() {
         body: { content: nextContent, rating: nextRating },
       });
 
-      setReviews((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, content: nextContent, rating: nextRating } : r))
-      );
+      setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, content: nextContent, rating: nextRating } : r)));
       setInfo("리뷰가 수정되었습니다.");
     } catch (e) {
       setError(e.message || "리뷰 수정 실패");
@@ -389,7 +367,7 @@ export default function Mypage() {
               type="button"
               onClick={() => {
                 clearMsg();
-                setTabAndUrl(t.key); // ✅ 버튼 클릭 시 URL과 탭을 동시에 변경
+                setTabAndUrl(t.key);
               }}
               style={tabBtn(tab === t.key)}
             >
@@ -398,9 +376,7 @@ export default function Mypage() {
           ))}
         </div>
 
-        {globalMsg.text && (
-          <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>{globalMsg.text}</div>
-        )}
+        {globalMsg.text && <div style={{ marginTop: 10, ...msgBox(globalMsg.type) }}>{globalMsg.text}</div>}
 
         <div className="card mypage-card" style={{ marginTop: 14 }}>
           {tab === "profile" && (
@@ -416,10 +392,7 @@ export default function Mypage() {
 
                 <div className="form-group">
                   <label>닉네임</label>
-                  <input
-                    value={profileForm.nickname}
-                    onChange={(e) => setProfileForm((p) => ({ ...p, nickname: e.target.value }))}
-                  />
+                  <input value={profileForm.nickname} onChange={(e) => setProfileForm((p) => ({ ...p, nickname: e.target.value }))} />
                 </div>
 
                 <div className="form-group">
@@ -454,16 +427,12 @@ export default function Mypage() {
                   <input
                     type="password"
                     value={profileForm.newPasswordConfirm}
-                    onChange={(e) =>
-                      setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))
-                    }
+                    onChange={(e) => setProfileForm((p) => ({ ...p, newPasswordConfirm: e.target.value }))}
                     placeholder="변경 시에만 입력"
                   />
                 </div>
 
-                {profileMsg.text && (
-                  <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>{profileMsg.text}</div>
-                )}
+                {profileMsg.text && <div style={{ marginTop: 8, ...msgBox(profileMsg.type) }}>{profileMsg.text}</div>}
 
                 <button className="auth-submit-btn" disabled={loading}>
                   {loading ? "저장 중..." : "저장하기"}
@@ -499,13 +468,9 @@ export default function Mypage() {
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div>
                           <div style={{ fontWeight: 700 }}>{cafe.name}</div>
-                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                            {cafe.region || "-"}
-                          </div>
+                          <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>{cafe.region || "-"}</div>
                           {cafe.address ? (
-                            <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
-                              {cafe.address}
-                            </div>
+                            <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{cafe.address}</div>
                           ) : null}
                         </div>
 
@@ -570,28 +535,16 @@ export default function Mypage() {
                         </div>
 
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button
-                            type="button"
-                            style={btnGhost}
-                            disabled={loading}
-                            onClick={() => onEditReview(r.id)}
-                          >
+                          <button type="button" style={btnGhost} disabled={loading} onClick={() => onEditReview(r.id)}>
                             수정
                           </button>
-                          <button
-                            type="button"
-                            style={btnDangerGhost}
-                            disabled={loading}
-                            onClick={() => onDeleteReview(r.id)}
-                          >
+                          <button type="button" style={btnDangerGhost} disabled={loading} onClick={() => onDeleteReview(r.id)}>
                             삭제
                           </button>
                         </div>
                       </div>
 
-                      <div style={{ marginTop: 8, fontSize: 13, color: "#333", lineHeight: 1.5 }}>
-                        {r.content}
-                      </div>
+                      <div style={{ marginTop: 8, fontSize: 13, color: "#333", lineHeight: 1.5 }}>{r.content}</div>
                     </div>
                   ))}
                 </div>
@@ -606,19 +559,10 @@ export default function Mypage() {
 
               <div style={{ display: "grid", gap: 10 }}>
                 <div style={itemCard}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                     <div>
                       <div style={{ fontWeight: 700 }}>마케팅 수신</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                        이벤트/소식 알림을 받습니다.
-                      </div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>이벤트/소식 알림을 받습니다.</div>
                     </div>
                     <input
                       type="checkbox"
@@ -629,26 +573,15 @@ export default function Mypage() {
                 </div>
 
                 <div style={itemCard}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 10,
-                    }}
-                  >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                     <div>
                       <div style={{ fontWeight: 700 }}>프로필 공개</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>
-                        리뷰에 닉네임 표시 여부
-                      </div>
+                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>리뷰에 닉네임 표시 여부</div>
                     </div>
                     <input
                       type="checkbox"
                       checked={settings.profilePublic}
-                      onChange={(e) =>
-                        setSettings((s) => ({ ...s, profilePublic: e.target.checked }))
-                      }
+                      onChange={(e) => setSettings((s) => ({ ...s, profilePublic: e.target.checked }))}
                     />
                   </div>
                 </div>
