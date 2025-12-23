@@ -1,5 +1,5 @@
 // src/pages/Login.jsx
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
 
@@ -30,6 +30,66 @@ export default function Login() {
     setInfo("");
   };
 
+  // ✅ Kakao OAuth 콜백 처리
+  // - 백엔드가 /login#token=...&provider=kakao 로 리다이렉트합니다.
+  // - 여기서 token을 localStorage에 저장하고, /api/me로 사용자 정보를 받아 저장한 뒤 홈으로 이동합니다.
+  useEffect(() => {
+    const hash = window.location.hash || "";
+    if (!hash.startsWith("#")) return;
+
+    const params = new URLSearchParams(hash.replace(/^#/, ""));
+    const oauthError = params.get("oauth_error");
+    const token = params.get("token");
+
+    // ✅ 에러가 넘어오면 메시지 표시 후 hash 정리
+    if (oauthError && !token) {
+      setErr(decodeURIComponent(oauthError));
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      return;
+    }
+
+    if (!token) return;
+
+    // ✅ token 저장
+    localStorage.setItem("accessToken", token);
+
+    const decodeJwtPayload = (t) => {
+      try {
+        const part = t.split(".")[1];
+        if (!part) return null;
+        const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+        return JSON.parse(json);
+      } catch {
+        return null;
+      }
+    };
+
+    // ✅ 사용자 정보 저장(/api/me). 실패하더라도 최소 payload로 저장 후 이동
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data?.user) {
+          localStorage.setItem("user", JSON.stringify(data.user));
+        } else {
+          const p = decodeJwtPayload(token);
+          if (p) localStorage.setItem("user", JSON.stringify(p));
+        }
+      } catch {
+        const p = decodeJwtPayload(token);
+        if (p) localStorage.setItem("user", JSON.stringify(p));
+      } finally {
+        // hash 제거(새로고침 시 재처리 방지)
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        nav("/");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_BASE, nav]);
+
   const onSubmitLogin = async (e) => {
     e.preventDefault();
     clearMsgs();
@@ -57,6 +117,16 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ✅ (Kakao OAuth) 로그인 시작
+  const onKakaoStart = () => {
+    clearMsgs();
+    if (!API_BASE) {
+      setErr("VITE_API_BASE가 설정되어 있지 않습니다. (예: http://localhost:3000)");
+      return;
+    }
+    window.location.href = `${API_BASE}/auth/kakao/start`;
   };
 
   const goReset = () => {
@@ -282,6 +352,33 @@ export default function Login() {
               아직 회원이 아니신가요? <Link to="/join">회원가입</Link>
             </div>
           )}
+          
+          {/* ✅ Kakao 로그인 (MVP) */}
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "10px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "#eee" }} />
+                <div style={{ fontSize: 12, color: "#999" }}>또는</div>
+                <div style={{ flex: 1, height: 1, background: "#eee" }} />
+              </div>
+
+              <button
+                type="button"
+                onClick={onKakaoStart}
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  background: "#FEE500",
+                  color: "#191919",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                카카오로 계속하기
+              </button>
+</div>
         </div>
       </main>
     </div>
