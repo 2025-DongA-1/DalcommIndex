@@ -181,6 +181,58 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
       .trim();
   };
 
+  const pickFirstString = (arr) =>
+  (arr || []).find((v) => typeof v === "string" && v.trim()) || "";
+
+  const getThumbUrl = (cafe) => {
+    const raw =
+      cafe?.imageUrls ??
+      cafe?.images ??
+      cafe?.images_json ??
+      cafe?.imagesJson ??
+      cafe?.photos ??
+      cafe?.photo ??
+      cafe?.img_url ??
+      cafe?.image_url ??
+      cafe?.img ??
+      "";
+
+    // 배열이면 그대로 첫 장
+    if (Array.isArray(raw)) {
+      const u = pickFirstString(raw);
+      return u.startsWith("http") ? u : "";
+    }
+
+    // 문자열이면 JSON/CSV/단일 URL 대응
+    if (typeof raw === "string") {
+      const s = raw.trim();
+      if (!s) return "";
+
+      // JSON string (예: ["url1","url2"])
+      try {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) {
+          const u = pickFirstString(parsed);
+          return u.startsWith("http") ? u : "";
+        }
+        if (typeof parsed === "string") {
+          return parsed.startsWith("http") ? parsed : "";
+        }
+      } catch {}
+
+      // 콤마 구분 (예: url1,url2)
+      if (s.includes(",")) {
+        const u = s.split(",").map((v) => v.trim()).find(Boolean) || "";
+        return u.startsWith("http") ? u : "";
+      }
+
+      // 단일 URL
+      return s.startsWith("http") ? s : "";
+    }
+
+    return "";
+  };
+
   const visibleCount = useMemo(() => {
     return (searchResults || []).filter((c) => c && c.x && c.y).length;
   }, [searchResults]);
@@ -482,6 +534,7 @@ const handleTopSearch = async () => {
                     {searchResults.map((cafe, idx) => {
                       const isActive = focusedIndex === idx;
                       const hasCoord = !!(cafe?.x && cafe?.y);
+                      const thumbUrl = getThumbUrl(cafe);
 
                       return (
                         <button
@@ -495,39 +548,37 @@ const handleTopSearch = async () => {
                           }}
                           title="클릭하면 상세가 뜹니다"
                         >
-                          <div className="result-card-top">
-                            <div className="name">
-                              {cafe?.name || "이름 없음"}
-                              {cafe?.score ? (
-                                <span className="score"> {Number(cafe.score).toFixed(1)}</span>
-                              ) : null}
-                            </div>
-                            <div className="region">{cafe?.region || ""}</div>
-                          </div>
-
-                          <div className="address">{cafe?.address || ""}</div>
-
-                          {getTagLine(cafe) ? <div className="tags">{getTagLine(cafe)}</div> : null}
-
-                          <div className="result-card-bottom">
-                            <div className="parking">
-                              {cafe?.parking ? `주차: ${cafe.parking}` : "주차: 정보 없음"}
+                          <div className="result-card-row">
+                            <div className="result-thumb" aria-hidden="true">
+                              {thumbUrl ? (
+                                <img className="result-thumb-img" src={thumbUrl} alt="" loading="lazy" />
+                              ) : (
+                                <div className="result-thumb-ph">No Image</div>
+                              )}
                             </div>
 
-                            {cafe?.url ? (
-                              <a
-                                className="link"
-                                href={cafe.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                title="카카오맵 링크 열기"
-                              >
-                                지도 링크
-                              </a>
-                            ) : (
-                              <span className="link disabled">링크 없음</span>
-                            )}
+                            <div className="result-card-body">
+                              <div className="result-card-top">
+                                <div className="name">
+                                  {cafe?.name || "이름 없음"}
+                                  {cafe?.score ? (
+                                    <span className="score">{Number(cafe.score).toFixed(1)}</span>
+                                  ) : null}
+                                </div>
+                                <div className="region">{cafe?.region || ""}</div>
+                              </div>
+
+                              <div className="address">{cafe?.address || ""}</div>
+
+                              {getTagLine(cafe) ? <div className="tags">{getTagLine(cafe)}</div> : null}
+
+                              {/* ✅ 지도 링크 제거하고 주차 정보만 */}
+                              <div className="result-card-bottom">
+                                <div className="parking">
+                                  {cafe?.parking ? `주차: ${cafe.parking}` : "주차: 정보 없음"}
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </button>
                       );
