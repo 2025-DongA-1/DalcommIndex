@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams, useLocation, useNavigationType } from "react-router-dom";
 import Header from "../components/Header";
 import "../styles/Search.css";
 
@@ -142,6 +142,17 @@ export default function Search() {
   const [page, setPage] = useState(pageFromUrl);
   const spKey = sp.toString();
 
+   const location = useLocation();
+  const navType = useNavigationType();
+
+  // 검색 쿼리(=같은 검색조건)별로 스크롤 저장 키
+  const scrollKey = useMemo(() => `di:scroll:search:${location.search}`, [location.search]);
+
+  // 픽셀 저장(계속 sessionStorage에 쓰지 않고 ref에만 저장)
+  const scrollYRef = useRef(0);
+  const leavingRef = useRef(false);
+  const restoredRef = useRef(false);
+
   // URL -> 초기값
   const initialRegions = parseList(sp.get("region"));
   const initialQ = sp.get("q") ?? "";
@@ -159,6 +170,20 @@ export default function Search() {
   // 결과 상태
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
+
+   // ✅ 현재 스크롤을 ref로만 추적 (뒤로가기 복원용)
+  useEffect(() => {
+    leavingRef.current = false;
+    scrollYRef.current = window.scrollY || 0;
+
+    const onScroll = () => {
+      if (leavingRef.current) return;
+      scrollYRef.current = window.scrollY || 0;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [scrollKey]);
 
   // ✅ URL 변경 시 폼 상태도 동기화 (뒤로가기/앞으로가기 대응)
   // useEffect(() => {
@@ -283,6 +308,51 @@ export default function Search() {
       alive = false;
     };
   }, [spKey]);
+
+
+   // ✅ 뒤로/앞으로(POP)로 돌아왔을 때: 클릭했던 카드 위치로 복원 (1회만)
+// ✅ 뒤로/앞으로(POP)로 돌아왔을 때: 클릭했던 카드 위치로 복원 (1회만)
+useEffect(() => {
+  if (navType !== "POP") {
+    restoredRef.current = false;
+    return;
+  }
+  if (restoredRef.current) return;
+  if (loading) return;
+
+  let focus = null;
+  try {
+    const raw = sessionStorage.getItem("di:lastFocus");
+    focus = raw ? JSON.parse(raw) : null;
+  } catch {}
+
+  const focusId = focus && focus.search === location.search ? focus.id : null;
+  if (!focusId) return;
+
+  let tries = 0;
+  const tick = () => {
+    const el = document.querySelector(`[data-cafe-id="${String(focusId)}"]`);
+    if (el) {
+      // ✅ 헤더 때문에 너무 위에 붙으면 start 대신 center가 더 자연스러움
+      el.scrollIntoView({ block: "center" });
+      restoredRef.current = true;
+      return;
+    }
+
+    tries += 1;
+    if (tries < 120) {
+      requestAnimationFrame(tick); // 약 2초 정도 기다림
+      return;
+    }
+
+    // 끝까지 못 찾으면(데이터가 바뀌었거나) 그냥 종료
+    restoredRef.current = true;
+  };
+
+  requestAnimationFrame(tick);
+}, [navType, loading, location.search, results.length, page]);
+
+
 
 const regionPills = useMemo(() => {
   const rs = parseList(sp.get("region"));
@@ -517,9 +587,23 @@ const endPage = Math.min(startPage + 9, totalPages);
                 <button
                   type="button"
                   key={x.id}
+                  data-cafe-id={x.id}
                   className="result-card"
-                  onClick={() => navigate(`/cafe/${x.id}`)}
-                >
+                  onClick={() => {
+                    leavingRef.current = true;
+
+                      // 현재 픽셀 저장
+                    sessionStorage.setItem(scrollKey, String(scrollYRef.current));
+
+                      // 클릭한 카드 id 저장(핵심)
+                      sessionStorage.setItem(
+                       "di:lastFocus",
+                         JSON.stringify({ search: location.search, id: x.id })
+                          );
+
+                          navigate(`/cafe/${x.id}`);
+                           }}
+>
                   <div className="thumb">
                     <img
                       src={x.thumb}
