@@ -135,6 +135,26 @@ function normalizeThumb(src, regionKey) {
   return s;
 }
 
+function parseKeywords(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return [];
+
+  // "키워드 분석 중" 같은 placeholder는 제외
+  if (/키워드\s*분석\s*중/.test(s)) return [];
+
+  // 앞의 "키워드:" 제거 + 양끝 따옴표(일반/스마트쿼트) 제거
+  const cleaned = s
+    .replace(/^[“”"']?\s*키워드\s*[:：]\s*/i, "")
+    .replace(/[“”"']\s*$/, "")
+    .trim();
+
+  // 쉼표로 분리
+  return cleaned
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
@@ -290,6 +310,7 @@ export default function Search() {
           reviewCount: x.reviewCount ?? 0,
           why: Array.isArray(x.why) ? x.why : [],
           excerpt: x.excerpt || "",
+          keywords: parseKeywords(x.excerpt),  
           neighborhood: x.neighborhood || "",
           score: Number(x.score || 0) || 0,
         }));
@@ -638,14 +659,14 @@ const endPage = Math.min(startPage + 9, totalPages);
                     </div>
 
                     <div className="why">
-                      {(x.why || []).slice(0, 3).map((w) => (
-                        <span key={w} className="tag">
-                          {w}
-                        </span>
-                      ))}
+                      {Array.from(new Set([...(x.why || []), ...(x.keywords || [])]))
+                        .slice(0, 8)
+                        .map((w) => (
+                          <span key={w} className="tag">
+                            {w}
+                          </span>
+                        ))}
                     </div>
-
-                    <div className="excerpt">{x.excerpt ? `“${x.excerpt}”` : "“키워드 분석 중”"}</div>
                   </div>
                 </button>
               ))}
