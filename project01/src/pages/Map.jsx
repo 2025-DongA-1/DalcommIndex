@@ -227,7 +227,7 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
         topQuery,
         focusedIndex,
         searchResults: (searchResults || []).map(compactCafe),
-        sidebarPrefs: s.sidebarPrefs ?? null,  
+        // sidebarPrefs: s.sidebarPrefs ?? null,  
       };
       sessionStorage.setItem(STORE_KEY, JSON.stringify(payload));
     } catch (e) {
