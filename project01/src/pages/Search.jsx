@@ -566,7 +566,13 @@ const normalized = items.map((x) => ({
   score: Number(x.score || 0) || 0,
 }));
 
-const previewFiltered = filterByPurposes(normalized, purposes);
+let previewFiltered = normalized;
+
+// ✅ 방문목적 + 분위기 + 편의조건 모두 반영
+previewFiltered = filterByPurposes(previewFiltered, purposes);
+previewFiltered = filterByMoods(previewFiltered, moods);
+previewFiltered = filterByMusts(previewFiltered, musts);
+
 setPreviewCount(previewFiltered.length);
     } catch (e) {
       if (!alive) return;
@@ -727,7 +733,7 @@ musts.forEach((k) => {
   });
 
   return chips;
-}, [regions, themes, purposes, desserts]);
+}, [regions, themes, purposes, moods, musts, desserts]);
 
 const removeSummaryChip = (chip) => {
   const nextRegions =
