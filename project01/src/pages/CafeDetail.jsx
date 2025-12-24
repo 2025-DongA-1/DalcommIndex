@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import Header from "../components/Header";
+import PhotoLightbox from "../components/PhotoLightbox";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
@@ -143,6 +144,8 @@ export default function CafeDetail() {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState("");
   const [reviewForm, setReviewForm] = useState({ rating: 5, content: "" });
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
 
   const me = useMemo(() => {
     const raw = localStorage.getItem("user");
@@ -323,6 +326,13 @@ export default function CafeDetail() {
 
   if (!detail) return null;
 
+  const openPhotoViewer = (i) => {
+    if (!detail?.photos?.length) return;
+    const clamped = Math.max(0, Math.min(i, detail.photos.length - 1));
+    setPhotoViewerIndex(clamped);
+    setPhotoViewerOpen(true);
+  };
+
   const favoriteCafeId = Number(detail.cafe_id ?? detail.id);
 
   function WordCloud({ items, onClickWord, initialLimit = 30, maxLimit = 80 }) {
@@ -502,7 +512,18 @@ export default function CafeDetail() {
               <div className="cfd-photoGrid">
                 {(detail.photos.length ? detail.photos : new Array(4).fill(null)).map((url, i) => (
                   <div key={i} className="cfd-photo">
-                    {url ? <img src={url} alt={`cafe-${i}`} className="cfd-photoImg" /> : <div className="cfd-photoPh">사진 준비중</div>}
+                    {url ? (
+                      <button
+                       type="button"
+                        onClick={() => openPhotoViewer(i)}
+                        aria-label="사진 크게 보기"
+                        style={{ border: 0, padding: 0, background: "transparent", width: "100%", height: "100%", cursor: "zoom-in" }}
+                      >
+                        <img src={url} alt={`cafe-${i}`} className="cfd-photoImg" />
+                      </button>
+                    ) : (
+                      <div className="cfd-photoPh">사진 준비중</div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -696,6 +717,13 @@ export default function CafeDetail() {
           </aside>
         </div>
       </main>
+      <PhotoLightbox
+        open={photoViewerOpen}
+        photos={detail.photos}
+        index={photoViewerIndex}
+        onIndexChange={setPhotoViewerIndex}
+        onClose={() => setPhotoViewerOpen(false)}
+      />
     </div>
   );
 }

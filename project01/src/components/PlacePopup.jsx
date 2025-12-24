@@ -1,6 +1,7 @@
 // src/components/PlacePopup.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import PhotoLightbox from "./PhotoLightbox";
 
 const API_BASE = import.meta.env.VITE_API_BASE || ""; // ✅ 서버 API base
 const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 이벤트명 통일
@@ -398,6 +399,8 @@ export default function PlacePopup({ open, place, onClose }) {
   const [tab, setTab] = useState("home"); // home | review | photo | info
   const [moreOpen, setMoreOpen] = useState(false);
   const [detailCafe, setDetailCafe] = useState(null);
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [photoViewerIndex, setPhotoViewerIndex] = useState(0);
 
   // ✅ 즐겨찾기 상태(서버 기준)
   const [saved, setSaved] = useState(false);
@@ -420,11 +423,13 @@ export default function PlacePopup({ open, place, onClose }) {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose?.();
+     if (e.key !== "Escape") return;
+     if (photoViewerOpen) setPhotoViewerOpen(false);
+     else onClose?.();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, photoViewerOpen]);
 
   /** 팝업 열릴 때 초기화 */
   useEffect(() => {
@@ -758,6 +763,13 @@ export default function PlacePopup({ open, place, onClose }) {
     mergedPlace?.url || (lat && lng ? `https://map.kakao.com/link/map/${encodeURIComponent(name)},${lat},${lng}` : "");
 
   const topPhotos = photos.slice(0, 3);
+  
+  const openPhotoViewer = (i) => {
+    if (!photos.length) return;
+    const clamped = Math.max(0, Math.min(i, photos.length - 1));
+    setPhotoViewerIndex(clamped);
+    setPhotoViewerOpen(true);
+  };
   const extraCount = Math.max(0, photos.length - topPhotos.length);
 
   // ✅ tab 연동 이동 (tab=review 로 상세페이지 리뷰 섹션/탭 오픈)
@@ -807,7 +819,14 @@ export default function PlacePopup({ open, place, onClose }) {
             ) : (
               <>
                 <div className="pp-photo pp-photoMain">
-                  <img className="pp-photoImg" src={topPhotos[0]} alt="대표 사진" />
+                    <button
+                      type="button"
+                      onClick={() => openPhotoViewer(0)}
+                      aria-label="대표 사진 크게 보기"
+                      style={{ border: 0, padding: 0, background: "transparent", width: "100%", height: "100%", cursor: "zoom-in" }}
+                    >
+                      <img className="pp-photoImg" src={topPhotos[0]} alt="대표 사진" />
+                    </button>
                 </div>
 
                 <div className="pp-photoCol">
@@ -1027,7 +1046,14 @@ export default function PlacePopup({ open, place, onClose }) {
                 <div className="pp-photoAll">
                   {photos.map((p, i) => (
                     <div className="pp-photoThumb" key={`${p}-${i}`}>
-                      <img className="pp-photoImg" src={p} alt="사진" />
+                         <button
+                           type="button"
+                           onClick={() => openPhotoViewer(i)}
+                           aria-label="사진 크게 보기"
+                           style={{ border: 0, padding: 0, background: "transparent", width: "100%", cursor: "zoom-in" }}
+                         >
+                           <img className="pp-photoImg" src={p} alt="사진" />
+                         </button>
                     </div>
                   ))}
                 </div>
@@ -1054,6 +1080,13 @@ export default function PlacePopup({ open, place, onClose }) {
             </div>
           )}
         </div>
+      <PhotoLightbox
+        open={photoViewerOpen}
+        photos={photos}
+        index={photoViewerIndex}
+        onIndexChange={setPhotoViewerIndex}
+        onClose={() => setPhotoViewerOpen(false)}
+      />
       </div>
     </div>
   );
