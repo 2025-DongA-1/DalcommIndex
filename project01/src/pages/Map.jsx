@@ -170,10 +170,33 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
     setPopupPlace(null);
   };
 
+  const cleanText = (v) => {
+    if (v === null || v === undefined) return "";
+    const s = String(v).trim();
+    if (!s) return "";
+    const sl = s.toLowerCase();
+    // "null", "\N", "undefined" 같은 플레이스홀더 제거
+    if (sl === "null" || sl === "\\n" || sl === "undefined") return "";
+    return s;
+  };
+
+  // 태그 필드 전용: "가족, null" / "가족 | null" / ["가족","null"] 같은 케이스까지 제거
+  const cleanTagField = (v) => {
+    if (Array.isArray(v)) {
+      return v.map(cleanText).filter(Boolean).join(" · ");
+    }
+    const s = cleanText(v);
+    if (!s) return "";
+    // 구분자가 섞여 있어도 토큰 단위로 정리
+    const tokens = s.split(/[,\|·]/g).map((x) => cleanText(x));
+    return tokens.filter(Boolean).join(" · ");
+  };
+
   const getTagLine = (cafe) => {
-    const atmos = cafe?.atmosphere || cafe?.atmosphere_norm || "";
-    const purpose = cafe?.purpose || cafe?.purpose_norm || "";
-    const taste = cafe?.taste || cafe?.taste_norm || "";
+    const atmos = cleanTagField(cafe?.atmosphere_norm) || cleanTagField(cafe?.atmosphere);
+    const purpose = cleanTagField(cafe?.purpose_norm) || cleanTagField(cafe?.purpose);
+    const taste = cleanTagField(cafe?.taste_norm) || cleanTagField(cafe?.taste);
+
     return [atmos, purpose, taste]
       .filter(Boolean)
       .join(" | ")
