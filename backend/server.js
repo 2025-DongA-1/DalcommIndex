@@ -589,6 +589,97 @@ function tokensFromKeywordCounts(keywordCountsRaw, maxItems = 80) {
 }
 
 
+// ===== creator insights helpers (키워드 집계/조합) =====
+function keywordPairsFromCounts(keywordCountsRaw, topKeywordsArr = [], maxItems = 80) {
+  const out = [];
+
+  // 1) 배열 형태: [["말차",12], ...] 또는 [{text,value}, ...]
+  if (Array.isArray(keywordCountsRaw)) {
+    for (const it of keywordCountsRaw) {
+      if (!it) continue;
+
+      if (Array.isArray(it) && it.length >= 2) {
+        const text = normalizeStr(it[0]);
+        const value = Number(it[1]);
+        if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+        continue;
+      }
+
+      if (typeof it === "object") {
+        const text = normalizeStr(it.text ?? it.word ?? it.token ?? it.keyword);
+        const value = Number(it.value ?? it.count ?? it.cnt ?? it.freq);
+        if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+      }
+    }
+  }
+
+  // 2) 객체 형태: {"말차":12, ...}
+  if (
+    !out.length &&
+    keywordCountsRaw &&
+    typeof keywordCountsRaw === "object" &&
+    !Array.isArray(keywordCountsRaw)
+  ) {
+    for (const [k, v] of Object.entries(keywordCountsRaw)) {
+      const text = normalizeStr(k);
+      const value = Number(v);
+      if (text && Number.isFinite(value) && value > 0) out.push({ text, value });
+    }
+  }
+
+  // 3) fallback: keyword_counts_json이 비어있으면 topKeywords로 임시 가중치 생성
+  if (!out.length && Array.isArray(topKeywordsArr) && topKeywordsArr.length) {
+    const base = Math.min(50, topKeywordsArr.length);
+    for (let i = 0; i < base; i++) {
+      const text = normalizeStr(topKeywordsArr[i]);
+      if (!text) continue;
+      out.push({ text, value: base - i });
+    }
+  }
+
+  // 중복 제거(최대값 유지) + 정렬 + 상위 maxItems 제한
+  const m = new Map();
+  for (const it of out) {
+    const key = normalizeStr(it.text);
+    if (!key) continue;
+    m.set(key, Math.max(Number(m.get(key) || 0), Number(it.value || 0)));
+  }
+
+  return Array.from(m.entries())
+    .map(([text, value]) => ({ text, value }))
+    .sort((a, b) => (b.value || 0) - (a.value || 0))
+    .slice(0, maxItems);
+}
+
+function buildDictIndex(dictItems = []) {
+  const syn2canon = new Map();
+  const canon2weight = new Map();
+
+  for (const it of Array.isArray(dictItems) ? dictItems : []) {
+    const canonical = normalizeStr(it?.canonical);
+    if (!canonical) continue;
+    canon2weight.set(canonical, Number(it?.weight ?? 1) || 1);
+
+    const syns = Array.isArray(it?.synonyms) ? it.synonyms : [canonical];
+    for (const s of syns) {
+      const ss = normalizeStr(s);
+      if (!ss) continue;
+      // 동일 synonym이 여러 canonical에 걸리는 경우: 먼저 들어온 것을 우선(사전 정렬/가중치에 의해 결정)
+      if (!syn2canon.has(ss)) syn2canon.set(ss, canonical);
+    }
+  }
+
+  return { syn2canon, canon2weight };
+}
+
+function scoreByMentionAndPresence(mentionCount, cafeCount, weight = 1) {
+  const m = Math.max(Number(mentionCount || 0), 0);
+  const c = Math.max(Number(cafeCount || 0), 0);
+  const w = Math.max(Number(weight || 1), 0.1);
+  // 설명 가능: 언급량(70%) + 등장 카페수(30%), 로그 스케일
+  return (0.7 * Math.log1p(m) + 0.3 * Math.log1p(c)) * w;
+}
+
 
 function deriveThemesAndDesserts({ topKeywords = [], menuTags = [], recoTags = [], dessertDict = [] }) {
   const tokenSet = buildTokenSet(topKeywords, menuTags, recoTags);
@@ -717,6 +808,202 @@ app.get("/api/keywords", async (req, res) => {
     return res.status(500).json({ message: "키워드 조회 실패" });
   }
 });
+
+/** ✅ 창업자 인사이트: 메뉴/조합/컨셉(목적/분위기/맛) 랭킹 */
+app.get("/api/creator/insights", async (req, res) => {
+  try {
+    if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+      return res.status(503).json({ message: "DB 설정이 필요합니다." });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit || 20), 1), 200);
+    const pairsLimit = Math.min(Math.max(Number(req.query.pairsLimit || 20), 1), 200);
+
+    const rows = await queryCafesWithLatestStats();
+
+    // ✅ keyword_dict 로드(내부 캐시): 메뉴/목적/분위기/맛
+    const dictDessert = await getActiveKeywordDict("dessert");
+    const dictDrink = await getActiveKeywordDict("drink");
+    const dictMeal = await getActiveKeywordDict("meal");
+    const dictPurpose = await getActiveKeywordDict("purpose");
+    const dictAtmosphere = await getActiveKeywordDict("atmosphere");
+    const dictTaste = await getActiveKeywordDict("taste");
+
+    const idxDessert = buildDictIndex(dictDessert);
+    const idxDrink = buildDictIndex(dictDrink);
+    const idxMeal = buildDictIndex(dictMeal);
+    const idxPurpose = buildDictIndex(dictPurpose);
+    const idxAtmosphere = buildDictIndex(dictAtmosphere);
+    const idxTaste = buildDictIndex(dictTaste);
+
+    // synonym -> [{category, canonical, weight}, ...]
+    const tokenHits = new Map();
+    const addIdxToHits = (category, idx) => {
+      for (const [syn, canonical] of idx.syn2canon.entries()) {
+        const arr = tokenHits.get(syn) || [];
+        const weight = Number(idx.canon2weight.get(canonical) ?? 1) || 1;
+        const exists = arr.some((h) => h.category === category && h.canonical === canonical);
+        if (!exists) arr.push({ category, canonical, weight });
+        tokenHits.set(syn, arr);
+      }
+    };
+
+    addIdxToHits("dessert", idxDessert);
+    addIdxToHits("drink", idxDrink);
+    addIdxToHits("meal", idxMeal);
+    addIdxToHits("purpose", idxPurpose);
+    addIdxToHits("atmosphere", idxAtmosphere);
+    addIdxToHits("taste", idxTaste);
+
+    const aggMenus = new Map();       // key: "category||canonical"
+    const aggPurpose = new Map();     // key: "purpose||canonical"
+    const aggAtmos = new Map();
+    const aggTaste = new Map();
+    const aggPairs = new Map();       // key: "a||b"
+
+    const upsertAgg = (map, key, base) => {
+      const prev = map.get(key);
+      if (!prev) {
+        map.set(key, base);
+        return base;
+      }
+      // merge
+      prev.mentionCount += base.mentionCount;
+      prev.cafeCount += base.cafeCount;
+      // weight는 더 큰 값을 유지
+      prev.weight = Math.max(Number(prev.weight ?? 1) || 1, Number(base.weight ?? 1) || 1);
+      return prev;
+    };
+
+    for (const r of rows) {
+      const topKeywords = safeJsonParse(r.top_keywords_json, []);
+      const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
+      const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
+
+      // ✅ 카페 단위 토큰/가중치 목록(가능하면 keyword_counts_json 기반)
+      const pairs = keywordPairsFromCounts(keywordCountsRaw, topKeywordsArr, 80);
+
+      // ✅ 카페 내 중복 등장(동의어 중복 등)으로 cafeCount가 여러 번 올라가는 것 방지
+      const seenKeys = new Set();
+
+      // ✅ 메뉴 조합용: 카페 단위 메뉴 canonical->count
+      const menuCanonCounts = new Map();
+      const menuCanonCategory = new Map(); // canonical -> category(최초 히트 기준)
+
+      for (const it of pairs) {
+        const token = normalizeStr(it?.text);
+        const value = Number(it?.value || 0) || 0;
+        if (!token || value <= 0) continue;
+
+        const hits = tokenHits.get(token);
+        if (!hits || !hits.length) continue;
+
+        for (const h of hits) {
+          const k = `${h.category}||${h.canonical}`;
+          const cafeCountInc = seenKeys.has(k) ? 0 : 1;
+          if (!seenKeys.has(k)) seenKeys.add(k);
+
+          const base = {
+            category: h.category,
+            keyword: h.canonical,
+            mentionCount: value,
+            cafeCount: cafeCountInc,
+            weight: Number(h.weight ?? 1) || 1,
+          };
+
+          if (h.category === "dessert" || h.category === "drink" || h.category === "meal") {
+            upsertAgg(aggMenus, k, base);
+
+            // pair용 집계
+            menuCanonCounts.set(h.canonical, (menuCanonCounts.get(h.canonical) || 0) + value);
+            if (!menuCanonCategory.has(h.canonical)) menuCanonCategory.set(h.canonical, h.category);
+          } else if (h.category === "purpose") {
+            upsertAgg(aggPurpose, k, base);
+          } else if (h.category === "atmosphere") {
+            upsertAgg(aggAtmos, k, base);
+          } else if (h.category === "taste") {
+            upsertAgg(aggTaste, k, base);
+          }
+        }
+      }
+
+      // ✅ 메뉴 조합(카페 단위 상위 K개만)
+      const topMenu = Array.from(menuCanonCounts.entries())
+        .map(([canonical, cnt]) => ({ canonical, cnt }))
+        .sort((a, b) => (b.cnt || 0) - (a.cnt || 0))
+        .slice(0, 12);
+
+      for (let i = 0; i < topMenu.length; i++) {
+        for (let j = i + 1; j < topMenu.length; j++) {
+          const a = topMenu[i];
+          const b = topMenu[j];
+          const aa = a.canonical;
+          const bb = b.canonical;
+          if (!aa || !bb || aa === bb) continue;
+
+          const aFirst = String(aa).localeCompare(String(bb), "ko") <= 0;
+          const x = aFirst ? aa : bb;
+          const y = aFirst ? bb : aa;
+          const key = `${x}||${y}`;
+
+          const strengthInc = Math.min(Number(a.cnt || 0), Number(b.cnt || 0));
+          const prev = aggPairs.get(key) || {
+            a: x,
+            b: y,
+            strength: 0,
+            cafeCount: 0,
+            aCategory: menuCanonCategory.get(x) || "menu",
+            bCategory: menuCanonCategory.get(y) || "menu",
+          };
+
+          prev.strength += strengthInc;
+          prev.cafeCount += 1;
+          aggPairs.set(key, prev);
+        }
+      }
+    }
+
+    const finalize = (arr) =>
+      arr
+        .map((x) => ({
+          ...x,
+          score: scoreByMentionAndPresence(x.mentionCount, x.cafeCount, x.weight),
+        }))
+        .sort((a, b) => (b.score || 0) - (a.score || 0) || (b.mentionCount || 0) - (a.mentionCount || 0))
+        .slice(0, limit);
+
+    const menus = finalize(Array.from(aggMenus.values()));
+    const purpose = finalize(Array.from(aggPurpose.values()));
+    const atmosphere = finalize(Array.from(aggAtmos.values()));
+    const taste = finalize(Array.from(aggTaste.values()));
+
+    const pairs = Array.from(aggPairs.values())
+      .map((p) => ({
+        ...p,
+        score: 0.7 * Math.log1p(Number(p.strength || 0)) + 0.3 * Math.log1p(Number(p.cafeCount || 0)),
+      }))
+      .sort((a, b) => (b.score || 0) - (a.score || 0) || (b.cafeCount || 0) - (a.cafeCount || 0))
+      .slice(0, pairsLimit);
+
+    return res.json({
+      menus,
+      pairs,
+      purpose,
+      atmosphere,
+      taste,
+      meta: {
+        cafesUsed: rows.length,
+        asOf: new Date().toISOString(),
+        note:
+          "시간대별 누적 데이터가 아닌 '현재 수집된 리뷰 텍스트(카페별 keyword_counts_json/top_keywords_json)' 기반 언급량 집계입니다.",
+      },
+    });
+  } catch (e) {
+    console.error("[api/creator/insights]", e);
+    return res.status(500).json({ message: "창업자 인사이트 생성 실패" });
+  }
+});
+
 
 
   /** ✅ 검색 페이지용: 목록 */
