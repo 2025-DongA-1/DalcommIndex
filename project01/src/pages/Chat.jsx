@@ -641,9 +641,6 @@ const Chat = () => {
                                                 <div className="result-name">{c.name}</div>
                                                 <div className="result-addr">{c.address}</div>
                                               </div>
-                                              <div className="result-score">
-                                                점수 {Number(c.score || 0).toFixed(1)}
-                                              </div>
                                             </div>
 
                                             {c.summary ? (

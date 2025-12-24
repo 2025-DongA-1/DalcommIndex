@@ -1,4 +1,4 @@
-// gpt.js  (※ 파일명 유지, 내부를 OpenAI로 교체)
+// gpt.js  (※ 파일명 유지)
 import "dotenv/config";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -13,7 +13,7 @@ const OPENAI_ENABLED = process.env.OPENAI_ENABLED !== "0";
 const OPENAI_PREFS = process.env.OPENAI_PREFS === "1";
 const OPENAI_REPLY = process.env.OPENAI_REPLY !== "0";
 
-// (A) 기존과 동일: 규칙 기반(휴리스틱) 유지
+// (A) 규칙 기반(휴리스틱)
 function heuristicPreferences(userMessage) {
   const text = (userMessage || "").toString();
 
@@ -27,29 +27,36 @@ function heuristicPreferences(userMessage) {
     minSentiment: 0,
   };
 
-  // 지역
+  // ✅ 지역 (표준 코드로 통일: jangseong / hwasun)
   if (/(광주|광주광역시)/.test(text)) prefs.region.push("gwangju");
   if (/나주/.test(text)) prefs.region.push("naju");
   if (/담양/.test(text)) prefs.region.push("damyang");
-  if (/장성/.test(text)) prefs.region.push("janseong");
-  if (/화순/.test(text)) prefs.region.push("hwasoon");
+  if (/장성/.test(text)) prefs.region.push("jangseong");
+  if (/화순/.test(text)) prefs.region.push("hwasun");
 
   // 분위기
-  if (/(조용|차분|한적)/.test(text)) prefs.atmosphere.push("조용한");
-  if (/(감성|예쁜|인테리어|사진|포토)/.test(text)) prefs.atmosphere.push("감성");
-  if (/(뷰|전망)/.test(text)) prefs.atmosphere.push("뷰");
+  if (/(조용|차분|한적|심플|미니멀)/.test(text)) prefs.atmosphere.push("조용한");
+  if (/(감성|감각|아늑|풍미|전통|차분|유럽|무드|모던|잔잔|한옥|미니멀|기와)/.test(text)) prefs.atmosphere.push("감성");
+  if (/(편안|포근|상큼|따뜻하다|묵직|한적|안락)/.test(text)) prefs.atmosphere.push("편안한");
+  if (/(뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("뷰");
+  if (/(포토존|뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("사진");
 
-  // 맛/카테고리
-  if (/(커피|라떼|아메리카노|핸드드립)/.test(text)) prefs.taste.push("커피");
-  if (/(디저트|케이크|빵|베이커리|쿠키|크로플)/.test(text)) prefs.taste.push("디저트");
+  // 메뉴
+  if (/(아메리카노|말차|카라멜|라떼|카페라떼|에이드|바닐라빈|밀크티|에스프레소|파르페|카카오파르페|콜드브루|밀크|다크|딸기라떼)/.test(text)) prefs.taste.push("커피");
+  if (/(디저트|케이크|버터|마들렌|쿠키|샌드위치|아이스크림|소금|샐러드|빙수|팥빙수| 바닐라|휘낭시에|식빵|파이|카다이프|타르트|푸딩|토스트|티라미수|베이글|브라우니|잠봉뵈르|크루아상|스콘|와플|젤라또|치즈|치즈케이크|팬케이크|애플파이|컵케이크|쫀득쿠키|버터바|에그타르트|크로플|롤케이크|쫀득모찌빵|카타이프)/.test(text)) prefs.taste.push("디저트");
+  if (/(브런치|피자|파스타|스테이크|파니니|포케)/.test(text)) prefs.taste.push("브런치");
 
-  // 목적
-  if (/(데이트)/.test(text)) prefs.purpose.push("데이트");
-  if (/(공부|작업|노트북)/.test(text)) prefs.purpose.push("작업");
+  // 목적 (공부/작업 분리해서 둘 다 유지)
+  if (/(데이트|연인|커플)/.test(text)) prefs.purpose.push("데이트");
+  if (/(공부)/.test(text)) prefs.purpose.push("공부");
+  if (/(작업|노트북|혼자)/.test(text)) prefs.purpose.push("작업");
+  if (/(가족|아기|아이|부모|키즈|어린이|유모차)/.test(text)) prefs.purpose.push("가족");
+  if (/(수다|모임)/.test(text)) prefs.purpose.push("모임");
 
-  // 구체 메뉴
-  const menuCandidates = ["소금빵", "케이크", "크로플", "휘낭시에", "블루베리케이크"];
-  for (const m of menuCandidates) if (text.includes(m)) prefs.menu.push(m);
+  // 맛
+  if (/(달콤|달달하다|단맛)/.test(text)) prefs.purpose.push("달달");
+  if (/(짭짤|쌉싸름|쓴맛)/.test(text)) prefs.purpose.push("씁쓸");
+  if (/(고소|담백)/.test(text)) prefs.purpose.push("고소");
 
   // 필수조건
   if (/주차/.test(text)) prefs.required.push("주차 가능");
@@ -79,7 +86,7 @@ function hasAny(v) {
   return Array.isArray(v) && v.length > 0;
 }
 
-// ✅ 연속 대화에서 부족한 조건을 채우기 위한 “후속 질문” 생성(규칙 기반)
+// ✅ 연속 대화에서 부족한 조건을 채우기 위한 “후속 질문”
 export function buildFollowUpQuestion(prefs) {
   const p = prefs && typeof prefs === "object" ? prefs : {};
 
@@ -90,16 +97,12 @@ export function buildFollowUpQuestion(prefs) {
   const menu = hasAny(p.menu);
   const required = hasAny(p.required);
 
-  // 우선순위: 지역 → 목적/분위기 → 메뉴/맛 → 필수조건
   if (!region) return "어느 지역을 원하세요? (광주 / 나주 / 담양 / 화순 / 장성)";
   if (!purpose && !atmos) return "어떤 느낌으로 찾으세요? (공부/작업 / 데이트 / 조용한 / 감성 / 뷰)";
   if (!purpose) return "방문 목적이 있으세요? (공부/작업 / 데이트 / 수다 / 가족)";
   if (!atmos) return "원하시는 분위기를 알려주실까요? (조용한 / 감성 / 뷰)";
   if (!menu && !taste) return "원하시는 메뉴/디저트가 있나요? (케이크 / 소금빵 / 크로플 / 휘낭시에)";
-
-  // 너무 잦은 질문을 피하려고 required는 마지막에만 가볍게
   if (!required) return "주차 같은 필수 조건이 있나요? (주차 필요 / 상관없음)";
-
   return null;
 }
 
@@ -111,10 +114,8 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
     model: OPENAI_MODEL,
     messages,
     temperature,
-    max_completion_tokens, // Chat Completions에서 권장 파라미터
+    max_completion_tokens,
   };
-
-  // JSON 강제 모드(가능하면 사용)
   if (response_format) body.response_format = response_format;
 
   const res = await fetch(OPENAI_URL, {
@@ -141,7 +142,6 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
 export async function extractPreferences(userMessage) {
   const heur = heuristicPreferences(userMessage);
 
-  // ✅ 기본값: 규칙 기반만 사용. OpenAI로 prefs를 뽑고 싶으면 OPENAI_PREFS=1
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_PREFS) return heur;
 
   const prompt = `
@@ -149,17 +149,17 @@ export async function extractPreferences(userMessage) {
 반드시 JSON만 출력하고, 다른 문장은 절대 쓰지 마.
 
 필드:
-- region: ["gwangju","naju","damyang","janseong","hwasoon"] 중 해당되는 것만, 없으면 []
+- region: ["gwangju","naju","damyang","jangseong","hwasun"] 중 해당되는 것만, 없으면 []
 - atmosphere: 분위기 키워드 (예: "조용한","감성","사진","뷰")
-- taste: 맛/카테고리 키워드 (예: "커피","디저트","빵","브런치")
-- purpose: 목적 키워드 (예: "데이트","작업","수다","가족")
-- menu: 구체 메뉴명 (예: "소금빵","블루베리케이크")
+- taste: 맛/카테고리 키워드 (예: "달콤", "담백", "고소", "쓴맛")
+- purpose: 목적 키워드 (예: "데이트","공부","작업","수다","가족")
+- menu: 메뉴명 (예: "커피","디저트","빵","브런치", "소금빵","블루베리케이크")
 - required: 필수조건 (예: "주차 가능","조용한")
 - minSentiment: 0~100 숫자
 
 사용자 문장:
 "${userMessage}"
-`.trim();
+  `.trim();
 
   try {
     let text;
@@ -216,6 +216,27 @@ export async function extractPreferences(userMessage) {
   }
 }
 
+function formatKeywordHits(hits) {
+  if (!Array.isArray(hits) || hits.length === 0) return "";
+  return hits.map((h) => `${h.label}(${h.count})`).join(", ");
+}
+
+function formatMatchSummary(cafe) {
+  const m = cafe?.match || {};
+  const parts = [];
+
+  if (Array.isArray(m.atmosphere) && m.atmosphere.length) parts.push(`분위기: ${m.atmosphere.join(", ")}`);
+  if (Array.isArray(m.purpose) && m.purpose.length) parts.push(`목적: ${m.purpose.join(", ")}`);
+  if (Array.isArray(m.taste) && m.taste.length) parts.push(`맛/카테고리: ${m.taste.join(", ")}`);
+
+  const kh = formatKeywordHits(cafe?.keyword_hits || m.keyword_hits);
+  if (kh) parts.push(`리뷰 언급: ${kh}`);
+
+  if (typeof cafe?.parking === "string" && cafe.parking && cafe.parking !== "정보 없음") parts.push(`주차: ${cafe.parking}`);
+
+  return parts.join(" / ");
+}
+
 /**
  * 2) 추천 결과를 자연어 설명으로 생성 (+ 부족한 조건에 대한 후속 질문 1개 자동 부착)
  */
@@ -227,9 +248,13 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
     return followUp ? `${base}\n\n${followUp}` : base;
   }
 
+  // ✅ OpenAI 비활성/쿼터 문제에서도 “키워드 언급 근거”가 보이도록 fallback 강화
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_REPLY) {
-    const names = results.map((c) => c.name).join(", ");
-    const base = `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    const lines = results.map((c, i) => {
+      const reason = formatMatchSummary(c);
+      return `${i + 1}. ${c.name}${c.address ? ` (${c.address})` : ""}${reason ? `\n   - ${reason}` : ""}`;
+    });
+    const base = `요청하신 조건과 “리뷰 키워드 언급량”을 기준으로 추천드려요.\n\n${lines.join("\n")}`;
     return followUp ? `${base}\n\n${followUp}` : base;
   }
 
@@ -246,6 +271,10 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
     main_coffee: cafe.main_coffee || "",
     parking: cafe.parking || "",
     summary: cafe.summary || "",
+    // ✅ 근거(모델이 “왜 추천인지”를 말로 풀 수 있게)
+    why: Array.isArray(cafe.keyword_hits)
+      ? cafe.keyword_hits.map((h) => h?.text).filter(Boolean).slice(0, 3)
+      : (Array.isArray(cafe.why) ? cafe.why.slice(0, 3) : []),
   }));
 
   const prompt = `
@@ -262,9 +291,9 @@ ${JSON.stringify(simpleResults, null, 2)}
 
 위 정보를 바탕으로, 한국어 존댓말로 1~3문단 정도로 자연스럽게 설명해줘.
 - 맨 앞에 "다음 카페들을 추천드릴게요."로 시작
-- 핵심 특징(위치, 분위기, 디저트/커피, 주차 등) 위주
+- 반드시 추천 근거를 포함해: match / keyword_hits(리뷰 언급량) 중 적어도 1개는 언급
 - 마지막에 질문(후속 질문)은 넣지 마 (질문은 서버가 별도로 붙일 거야)
-`.trim();
+  `.trim();
 
   try {
     const text = await openaiChat({
@@ -278,8 +307,11 @@ ${JSON.stringify(simpleResults, null, 2)}
     return followUp ? `${text}\n\n${followUp}` : text;
   } catch (err) {
     console.warn("[openai] 설명 생성 실패, fallback 사용:", err?.message || err);
-    const names = results.map((c) => c.name).join(", ");
-    const base = `요청해 주신 조건에 맞춰 다음 카페들을 추천드려요: ${names}`;
+    const lines = results.map((c, i) => {
+      const reason = formatMatchSummary(c);
+      return `${i + 1}. ${c.name}${c.address ? ` (${c.address})` : ""}${reason ? `\n   - ${reason}` : ""}`;
+    });
+    const base = `요청하신 조건과 “리뷰 키워드 언급량”을 기준으로 추천드려요.\n\n${lines.join("\n")}`;
     return followUp ? `${base}\n\n${followUp}` : base;
   }
 }

@@ -207,7 +207,9 @@ export default function CafeDetail() {
 
     // 화면에 쓸 텍스트 정리
     const mainMenu = cafe.mainMenu || "대표메뉴 정보 없음";
+    const taste = cafe.taste || "맛 정보 없음";
     const atmosphere = cafe.atmosphere || "분위기 정보 없음";
+    const purpose = cafe.purpose || "동반 정보 없음";
     const parking = cafe.parking || "주차 정보 없음";
 
     return {
@@ -216,6 +218,8 @@ export default function CafeDetail() {
       tags,
       mainMenu,
       atmosphere,
+      taste,
+      purpose,
       parking,
       reviewCount: cafe.reviewCount ?? 0,
       userReviewCount: cafe.userReviewCount ?? 0,
@@ -526,6 +530,8 @@ export default function CafeDetail() {
                 <InfoRow label="주차" value={detail.parking || "주차 정보 없음"} />
                 <InfoRow label="대표메뉴" value={detail.mainMenu || "대표메뉴 정보 없음"} />
                 <InfoRow label="분위기" value={detail.atmosphere || "분위기 정보 없음"} />
+                <InfoRow label="맛" value={detail.taste || "맛 정보 없음"} />
+                <InfoRow label="동반인" value={detail.purpose || "분위기 정보 없음"} />
               </div>
 
               {detail.mapUrl ? (
@@ -629,11 +635,11 @@ export default function CafeDetail() {
               </div>
 
               <div className="cfd-summary">
-                <div className="cfd-score">
+                {/* <div className="cfd-score">
                   <span className="cfd-scoreStar">★</span>
                   <span className="cfd-scoreText">달콤지수</span>
                   <span className="cfd-scoreVal">{Math.round(Number(detail.score || 0))}</span>
-                </div>
+                </div> */}
 
                 <div className="cfd-subCard">
                   <div className="cfd-subCardTitle">워드클라우드</div>

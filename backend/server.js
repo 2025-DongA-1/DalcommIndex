@@ -131,8 +131,8 @@ function mergeKeywordDicts(...lists) {
   );
 }
 
-function buildTokenSet(topKeywords = [], menuTags = [], recoTags = []) {
-  const raw = [...topKeywords, ...menuTags, ...recoTags]
+function buildTokenSet(topKeywords = [], menuTags = [], tasteTags = [], atmosphereTags = [], purposeTags = []) {
+  const raw = [...topKeywords, ...menuTags, ...tasteTags, ...atmosphereTags, ...purposeTags]
     .map((x) => normalizeStr(x))
     .filter(Boolean);
 
@@ -373,6 +373,8 @@ function pickCafeResultFields(cafe) {
     address: cafe.address,
     url: cafe.url,
     score: Number.isFinite(Number(cafe.score)) ? Number(cafe.score) : 0,
+    mention_score: Number.isFinite(Number(cafe.mention_score)) ? Number(cafe.mention_score) : undefined,
+    keyword_hits: Array.isArray(cafe.keyword_hits) ? cafe.keyword_hits : undefined,
     summary: cafe.summary,
     atmosphere: cafe.atmosphere || cafe.atmosphere_norm,
     purpose: cafe.purpose || cafe.purpose_norm,
@@ -531,13 +533,17 @@ function roadAreaKeyFromAddress(address) {
 
 function splitTagsFromScoreBy(scoreBy) {
   const menuRaw = normalizeStr(scoreBy?.menu_tags ?? scoreBy?.menuTags ?? "");
-  const recoRaw = normalizeStr(scoreBy?.reco_tags ?? scoreBy?.recoTags ?? "");
+  const tasteRaw = normalizeStr(scoreBy?.taste_tags ?? scoreBy?.tasteTags ?? "");
+  const atmosphereRaw = normalizeStr(scoreBy?.atmosphere_tags ?? scoreBy?.atmosphereTags ?? "");
+  const purposeRaw = normalizeStr(scoreBy?.purpose_tags ?? scoreBy?.purposeTags ?? "");
 
   const menuTags = menuRaw ? menuRaw.split(/[|,]/g).map((x) => x.trim()).filter(Boolean) : [];
-  const recoTags = recoRaw ? recoRaw.split(/[|,]/g).map((x) => x.trim()).filter(Boolean) : [];
+  const tasteTags = tasteRaw ? tasteRaw.split(/[|,]/g).map((x) => x.trim()).filter(Boolean) : [];
+  const atmosphereTags = atmosphereRaw ? atmosphereRaw.split(/[|,]/g).map((x) => x.trim()).filter(Boolean) : [];
+  const purposeTags = purposeRaw ? purposeRaw.split(/[|,]/g).map((x) => x.trim()).filter(Boolean) : [];
   const parking = normalizeStr(scoreBy?.parking ?? "");
 
-  return { menuTags, recoTags, parking };
+  return { menuTags, tasteTags, atmosphereTags, purposeTags, parking };
 }
 
 function tokensFromKeywordCounts(keywordCountsRaw, maxItems = 80) {
@@ -1067,11 +1073,13 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const combinedReviewCount = userReviewCount;
 
 
-      const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
+      const { menuTags, tasteTags, atmosphereTags, purposeTags , parking } = splitTagsFromScoreBy(scoreBy);
       const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
         topKeywords: keywordsForMatch,
         menuTags,
-        recoTags,
+        tasteTags,
+        atmosphereTags,
+        purposeTags,
         dessertDict,
       });
 
@@ -1220,11 +1228,11 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
       const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
 
-      const { menuTags, recoTags, parking } = splitTagsFromScoreBy(scoreBy);
+      const { menuTags, tasteTags, atmosphereTags, purposeTags, parking } = splitTagsFromScoreBy(scoreBy);
       const photos = arrayFromJson(r.images_json);
       const mapUrl = firstFromJsonArray(r.map_urls_json);
 
-      const tags = Array.from(new Set([...topKeywordsArr, ...menuTags, ...recoTags].map((x) => normalizeStr(x)).filter(Boolean)))
+      const tags = Array.from(new Set([...topKeywordsArr, ...menuTags, ...tasteTags, ...atmosphereTags, ...purposeTags].map((x) => normalizeStr(x)).filter(Boolean)))
         .slice(0, 12);
 
       const keywordCounts = (() => {
@@ -1311,11 +1319,12 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
           score: Number(r.score_total || 0) || 0,
           parking: parking || "정보 없음",
           mainMenu: menuTags.slice(0, 6).join(", ") || "대표메뉴 정보 없음",
-          atmosphere: recoTags.slice(0, 6).join(", ") || "분위기 정보 없음",
+          atmosphere: atmosphereTags.slice(0, 6).join(", ") || "분위기 정보 없음",
+          taste: tasteTags.slice(0, 6).join(", ") || "맛 정보 없음",
+          purpose: purposeTags.slice(0, 6).join(", ") || "동반 정보 없음",
           tags,
           topKeywords: topKeywordsArr,
           menuTags,
-          recoTags,
           keywordCounts,
         },
       });

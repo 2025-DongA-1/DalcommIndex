@@ -51,6 +51,27 @@ function setToPipe(setObj) {
   return [...(setObj || new Set())].join("|");
 }
 
+function tokensFromKeywordCounts(keywordCountsRaw, maxItems = 60) {
+    const pairs = [];
+  if (Array.isArray(keywordCountsRaw)) {
+      for (const item of keywordCountsRaw) {
+        const text = normalizeStr(item?.text);
+        const value = Number(item?.value);
+        if (text && Number.isFinite(value) && value > 0) pairs.push([text, value]);
+      }
+    } else if (keywordCountsRaw && typeof keywordCountsRaw === "object") {
+      for (const [k, v] of Object.entries(keywordCountsRaw)) {
+        const text = normalizeStr(k);      const value = Number(v);
+        if (text && Number.isFinite(value) && value > 0) pairs.push([text, value]);
+      }
+    }
+    pairs.sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  const out = [];
+  for (const [text] of pairs) {    out.push(text);
+    if (out.length >= maxItems) break;
+  }  return out;
+}
+
 export async function loadCafesFromDB() {
   // cafe_stats는 "최신 updated_at 1건"을 붙이는 방식 (프로젝트에 맞게 period_end 기준으로 바꿔도 됩니다)
   const [rows] = await pool.query(`
@@ -69,7 +90,8 @@ export async function loadCafesFromDB() {
       s.review_count_recent,
       s.last_mentioned_at,
       s.score_by_category_json,
-      s.top_keywords_json
+      s.top_keywords_json,
+      s.keyword_counts_json
     FROM cafes c
     LEFT JOIN (
       SELECT s1.*
@@ -86,9 +108,14 @@ export async function loadCafesFromDB() {
   return rows.map((r) => {
     const scoreBy = safeJsonParse(r.score_by_category_json, {});
     const topKeywords = safeJsonParse(r.top_keywords_json, []);
+    const keywordCounts = safeJsonParse(r.keyword_counts_json, null);
+    const keywordTokens = tokensFromKeywordCounts(keywordCounts, 60);
 
     const recoTags = toTokenSet(scoreBy?.reco_tags ?? scoreBy?.recoTags ?? []);
+    const companionTags = toTokenSet(scoreBy?.companion_tags ?? scoreBy?.companionTags ?? []);
+    const atmosphereTags = toTokenSet(scoreBy?.atmosphere_tags ?? scoreBy?.atmosphereTags ?? []);
     const menuTags = toTokenSet(scoreBy?.menu_tags ?? scoreBy?.menuTags ?? []);
+    const tasteTags = toTokenSet(scoreBy?.taste_tags ?? scoreBy?.tasteTags ?? []);
     const parking = normalizeStr(scoreBy?.parking) || "정보 없음";
 
     // DB(lat/lon) -> 프론트(Map/Kakao)에서 쓰는 x/y로 변환: x=lon, y=lat
@@ -101,17 +128,21 @@ export async function loadCafesFromDB() {
     const name = normalizeStr(r.name);
     const address = normalizeStr(r.address);
 
-    const tasteSet = new Set([...menuTags]); // 디저트/메뉴 기반
-    const atmosphereSet = new Set([...recoTags]);
-    const purposeSet = new Set([...recoTags]);
+    const menuSet = new Set([...menuTags]);
+    const tasteSet = new Set([...tasteTags]); // 맛 기반
+    const atmosphereSet = new Set([...atmosphereTags]);
+    const purposeSet = new Set([...companionTags]);
 
     const searchText = [
       name,
       address,
       normalizeStr(r.region),
+      [...menuSet].join(" "),
       [...tasteSet].join(" "),
       [...atmosphereSet].join(" "),
+      [...purposeSet].join(" "),
       Array.isArray(topKeywords) ? topKeywords.join(" ") : "",
+      keywordTokens.join(" "),
       parking,
     ]
       .filter(Boolean)
@@ -135,8 +166,10 @@ export async function loadCafesFromDB() {
       atmosphere_norm: setToPipe(atmosphereSet),
       taste_norm: setToPipe(tasteSet),
       purpose_norm: setToPipe(purposeSet),
+      menu_norm: setToPipe(menuSet),
       companion_norm: "",
 
+      menuSet,
       atmosphereSet,
       tasteSet,
       purposeSet,
@@ -161,6 +194,11 @@ export async function loadCafesFromDB() {
       review_count_total: Number(r.review_count_total || 0) || 0,
       review_count_recent: Number(r.review_count_recent || 0) || 0,
       last_mentioned_at: r.last_mentioned_at ?? null,
+
+      // ✅ 챗봇 추천(언급량 기반)에 필요
+      keyword_counts_json: keywordCounts,
+      top_keywords: Array.isArray(topKeywords) ? topKeywords : [],
+      keywords_text: keywordTokens.join(" "),
 
       searchText,
     };

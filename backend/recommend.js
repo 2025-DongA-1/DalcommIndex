@@ -1,27 +1,32 @@
-// recommend.js (프로젝트 적용용 수정본)
+// recommend.js (키워드 언급량 기반 추천 강화 버전)
 // - Sidebar에서 오는 "사진 / 뷰맛집", "공부 / 작업" 같은 문자열을 분해/정규화해서 매칭률 개선
 // - prefs 값이 string/array 섞여도 안전하게 처리
 // - 지역 한글 입력도 region 코드와 매칭되게 보강
 // - AND 필터 결과 0개일 때 점수 기반 soft fallback (랜덤 금지 유지)
+// - ✅ cafe_stats.keyword_counts_json(리뷰 키워드 언급량)을 점수에 반영 + 근거(keyword_hits) 반환
 
 const REGION_KEYWORDS = {
   gwangju: "광주",
   naju: "나주",
   damyang: "담양",
   jangseong: "장성",
-  janseong: "장성", // 혹시 기존 오타가 들어와도 처리
-  hwasoon: "화순",
+  janseong: "장성", // 오타/레거시 처리
   hwasun: "화순",
+  hwasoon: "화순", // 오타/레거시 처리
 };
 
 // 한글 지역 → 코드 보강(주소가 비어있는 데이터도 대비)
 const REGION_ALIAS_TO_CODE = {
-  "광주": "gwangju",
-  "광주광역시": "gwangju",
-  "나주": "naju",
-  "담양": "damyang",
-  "장성": "jangseong",
-  "화순": "hwasun",
+  광주: "gwangju",
+  광주광역시: "gwangju",
+  나주: "naju",
+  담양: "damyang",
+  장성: "jangseong",
+  화순: "hwasun",
+
+  // ✅ 레거시 코드/오타 보정
+  janseong: "jangseong",
+  hwasoon: "hwasun",
 };
 
 function normalizeStr(v) {
@@ -69,6 +74,85 @@ function normalizeTag(t) {
   return x;
 }
 
+function buildMentionCountMap(cafe) {
+  const raw = cafe?.keyword_counts_json;
+  const m = new Map();
+
+  // 1) keyword_counts_json: [{text,value}] or {token:count}
+  if (Array.isArray(raw)) {
+    for (const it of raw) {
+      const k = normalizeTag(it?.text);
+      const v = Number(it?.value);
+      if (!k || !Number.isFinite(v) || v <= 0) continue;
+      m.set(k, (m.get(k) || 0) + v);
+    }
+  } else if (raw && typeof raw === "object") {
+    for (const [k0, v0] of Object.entries(raw)) {
+      const k = normalizeTag(k0);
+      const v = Number(v0);
+      if (!k || !Number.isFinite(v) || v <= 0) continue;
+      m.set(k, (m.get(k) || 0) + v);
+    }
+  }
+
+  // 2) top_keywords fallback(언급량이 없을 때 최소한의 근거)
+  const top = Array.isArray(cafe?.top_keywords) ? cafe.top_keywords : [];
+  if (top.length) {
+    // 상위일수록 가중치를 조금 더 줌(가짜 count)
+    let w = Math.min(10, top.length + 2);
+    for (const t of top) {
+      const k = normalizeTag(t);
+      if (!k) continue;
+      if (!m.has(k)) m.set(k, w);
+      w = Math.max(1, w - 1);
+    }
+  }
+
+  return m;
+}
+
+function computeMentionEvidence(cafe, weightedWants, maxHits = 5) {
+  const m = buildMentionCountMap(cafe);
+  if (!m.size || !weightedWants.length) return { mentionScore: 0, hits: [] };
+
+  let mentionScore = 0;
+  const hits = [];
+
+  for (const { token, w } of weightedWants) {
+    const key = normalizeTag(token);
+    if (!key || key.length < 2) continue;
+
+   // exact
+    let bestKey = null;
+    let bestCount = 0;
+    if (m.has(key)) {
+      bestKey = key;
+      bestCount = m.get(key) || 0;
+    } else {
+      // partial(너무 짧은 토큰은 제외)
+      for (const [k, c] of m.entries()) {
+        if (k === key) continue;
+        if (k.includes(key) || key.includes(k)) {
+          if (c > bestCount) {
+            bestKey = k;
+            bestCount = c;
+          }
+        }
+      }
+    }
+
+    if (bestKey && bestCount > 0) {
+      // log 스케일로 과도한 쏠림 방지
+     const add = w * Math.log1p(bestCount);
+      mentionScore += add;
+      hits.push({ text: bestKey, value: bestCount });
+    }
+  }
+
+  hits.sort((a, b) => (b.value || 0) - (a.value || 0));
+  return { mentionScore, hits: hits.slice(0, maxHits) };
+}
+
 // prefs에 들어온 배열/문자열을 -> "정규화된 토큰 배열"로
 function normalizePrefList(v) {
   const arr = toArray(v);
@@ -86,14 +170,16 @@ function normalizePrefList(v) {
 
 function normalizeRegionPrefs(v) {
   const arr = normalizePrefList(v);
-  // 지역은 태그 정규화만으로 부족해서(한글/코드 혼재) 한 번 더 보강
   const out = [];
   for (const r of arr) {
     const lower = r.toLowerCase();
     out.push(r);
+
     if (REGION_ALIAS_TO_CODE[r]) out.push(REGION_ALIAS_TO_CODE[r]);
-    // "gwangju" 같은 코드가 오면 그대로
     if (REGION_KEYWORDS[lower]) out.push(lower);
+
+    // ✅ 레거시 코드/오타 → 표준 코드 보강
+    if (REGION_ALIAS_TO_CODE[lower]) out.push(REGION_ALIAS_TO_CODE[lower]);
   }
   return [...new Set(out)];
 }
@@ -114,8 +200,8 @@ function matchRegion(cafe, regionsPref) {
     // 1) region 코드가 같은 경우
     if (code && code === prefLower) return true;
 
-    // 2) 한글 지역이 들어온 경우 -> 코드로도 비교
-    const aliasCode = REGION_ALIAS_TO_CODE[prefRaw];
+    // 2) alias(오타/레거시 포함) → 표준 코드로도 비교
+    const aliasCode = REGION_ALIAS_TO_CODE[prefRaw] || REGION_ALIAS_TO_CODE[prefLower];
     if (aliasCode && code === aliasCode) return true;
 
     // 3) 주소에 한글 지명 포함되는 경우
@@ -135,6 +221,7 @@ function matchMenuKeyword(cafe, wantMenu = []) {
     cafe.main_coffee,
     cafe.taste_norm,
     cafe.summary,
+    cafe.keywords_text,
     cafe.name,
     cafe.address,
   ]
@@ -215,7 +302,7 @@ export function recommendCafes(prefs, cafes, topK = 5) {
   const wantAtmos = normalizePrefList(prefs.atmosphere);
   const wantTaste = normalizePrefList(prefs.taste);
   const wantPurpose = normalizePrefList(prefs.purpose);
-  const wantMenu = normalizePrefList(prefs.menu);        // menu도 구분자/중복 정리
+  const wantMenu = normalizePrefList(prefs.menu);
   const wantRequired = normalizePrefList(prefs.required);
 
   const wantAtmosSet = new Set(wantAtmos);
@@ -243,10 +330,9 @@ export function recommendCafes(prefs, cafes, topK = 5) {
 
   // 2) 분위기/맛/목적 AND 필터
   const afterAndFilter = candidates.filter((cafe) => {
-    const atmosSet = cafe.atmosphereSet || new Set();
-    const tasteSet = cafe.tasteSet || new Set();
-    const purposeSet = cafe.purposeSet || new Set();
-
+    const atmosSet = new Set([...(cafe.atmosphereSet || new Set())].map(normalizeTag).filter(Boolean));
+    const tasteSet = new Set([...(cafe.tasteSet || new Set())].map(normalizeTag).filter(Boolean));
+    const purposeSet = new Set([...(cafe.purposeSet || new Set())].map(normalizeTag).filter(Boolean));
     if (!includesAllTags(atmosSet, wantAtmosSet)) return false;
     if (!includesAllTags(tasteSet, wantTasteSet)) return false;
     if (!includesAllTags(purposeSet, wantPurposeSet)) return false;
@@ -255,14 +341,21 @@ export function recommendCafes(prefs, cafes, topK = 5) {
   });
 
   // ✅ AND 결과가 0개면: 랜덤 대신 “점수 기반 soft fallback”
-  // - 지역/메뉴/필수조건은 이미 필터된 상태이므로 품질 하락을 최소화
   if (afterAndFilter.length > 0) {
     candidates = afterAndFilter;
   }
 
-  // 3) 점수 계산(기존 로직 유지 + 정규화 토큰 기준)
-  function scoreCafe(cafe) {
+  function scoreCafeDetailed(cafe) {
     let score = 0;
+
+    const match = {
+      atmosphere: [],
+      taste: [],
+      purpose: [],
+      menu: wantMenu.slice(),
+      required: wantRequired.slice(),
+      keyword_hits: [],
+    };
 
     const coffee = Number(cafe.coffee_score || 0);
     const dessert = Number(cafe.dessert_score || 0);
@@ -277,9 +370,14 @@ export function recommendCafes(prefs, cafes, topK = 5) {
 
     // 분위기 매칭
     if (wantAtmosSet.size) {
-      const atmosSet = cafe.atmosphereSet || new Set();
+      const atmosSet = new Set([...(cafe.atmosphereSet || new Set())].map(normalizeTag).filter(Boolean));
       let matches = 0;
-      for (const tag of atmosSet) if (wantAtmosSet.has(tag)) matches++;
+      for (const tag of atmosSet) {
+        if (wantAtmosSet.has(tag)) {
+          matches++;
+          match.atmosphere.push(tag);
+        }
+      }
       score += matches * 2.0;
       if (cafe.photo_spot_flag && wantAtmosSet.has("사진")) score += 4.0;
       if (wantAtmosSet.has("뷰") && (atmosSet.has("뷰") || atmosSet.has("전망"))) score += 2.0;
@@ -287,9 +385,14 @@ export function recommendCafes(prefs, cafes, topK = 5) {
 
     // 맛/메뉴 매칭
     if (wantTasteSet.size) {
-      const tasteSet = cafe.tasteSet || new Set();
+      const tasteSet = new Set([...(cafe.tasteSet || new Set())].map(normalizeTag).filter(Boolean));
       let matches = 0;
-      for (const tag of tasteSet) if (wantTasteSet.has(tag)) matches++;
+      for (const tag of tasteSet) {
+        if (wantTasteSet.has(tag)) {
+          matches++;
+          match.taste.push(tag);
+        }
+      }
       score += matches * 2.0;
 
       if (wantTasteSet.has("커피") || wantTasteSet.has("커피맛")) score += coffee * 1.5;
@@ -298,27 +401,57 @@ export function recommendCafes(prefs, cafes, topK = 5) {
 
     // 목적 매칭
     if (wantPurposeSet.size) {
-      const purposeSet = cafe.purposeSet || new Set();
+      const purposeSet = new Set([...(cafe.purposeSet || new Set())].map(normalizeTag).filter(Boolean));
       let matches = 0;
-      for (const tag of purposeSet) if (wantPurposeSet.has(tag)) matches++;
+      for (const tag of purposeSet) {
+        if (wantPurposeSet.has(tag)) {
+          matches++;
+          match.purpose.push(tag);
+        }
+      }
       score += matches * 2.0;
 
       if (wantPurposeSet.has("데이트")) score += date * 2.0;
       if (wantPurposeSet.has("공부") || wantPurposeSet.has("작업")) score += study * 1.5;
     }
 
-    // 메뉴 키워드가 들어온 경우(예: 블루베리케이크)는 “정렬”에서 좀 더 우선
+    // 메뉴 키워드가 들어온 경우(예: 블루베리케이크)는 “정렬”에서 조금 우선
     if (wantMenu.length > 0) score += 2.5;
 
     // 필수조건이 있을수록 조금 우선
     if (wantRequired.length > 0) score += 1.5;
 
-    return score;
-  }
+    // ✅ 언급량 기반 점수(핵심)
+    const weightedWants = [
+      ...wantMenu.map((t) => ({ token: t, w: 1.5 })),
+      ...wantTaste.map((t) => ({ token: t, w: 1.2 })),
+      ...wantAtmos.map((t) => ({ token: t, w: 1.0 })),
+      ...wantPurpose.map((t) => ({ token: t, w: 1.0 })),
+      ...wantRequired.map((t) => ({ token: t, w: 0.7 })),
+    ];
+    const { mentionScore, hits } = computeMentionEvidence(cafe, weightedWants, 5);
 
-  // 서버가 기대하는 형태: “카페 객체 배열”에 score만 붙여서 반환
+    // mentionScore가 전체를 집어삼키지 않도록 클리핑 + 가중치
+    const clipped = Math.min(20, mentionScore);
+    score += clipped * 0.8;
+
+    return { totalScore: score, mention_score: clipped, keyword_hits: hits };
+   }
+
+    // 중복 제거(보기용)
+  //   match.atmosphere = [...new Set(match.atmosphere)];
+  //   match.taste = [...new Set(match.taste)];
+  //   match.purpose = [...new Set(match.purpose)];
+
+  //   return { score, match, keyword_hits: match.keyword_hits };
+  // }
+
+  // 서버가 기대하는 형태: “카페 객체 배열”에 score + match/근거 붙여서 반환
   return candidates
-    .map((cafe) => ({ ...cafe, score: scoreCafe(cafe) }))
+    .map((cafe) => {
+      const d = scoreCafeDetailed(cafe);
+      return { ...cafe, score: d.totalScore, mention_score: d.mention_score, keyword_hits: d.keyword_hits };
+    })
     .sort((a, b) => (b.score || 0) - (a.score || 0))
     .slice(0, topK);
 }
