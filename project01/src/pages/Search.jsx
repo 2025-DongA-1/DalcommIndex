@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams, useLocation, useNavigationType } from "re
 import Header from "../components/Header";
 import "../styles/Search.css";
 
+
+
 const REGION_ALIAS_MAP = {
   // keys
   "dong-gu": "dong-gu",
@@ -179,6 +181,13 @@ export default function Search() {
   const initialSort = sp.get("sort") ?? "relevance"; // relevance | score | rating | reviews
   const initialThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
   const initialDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
+  const initialMoods = (sp.get("moods") ?? "").split(",").filter(Boolean);
+const initialMusts = (sp.get("must") ?? "").split(",").filter(Boolean);
+
+const [moods, setMoods] = useState(initialMoods);
+const [musts, setMusts] = useState(initialMusts);
+
+
 
   // 폼 상태
   const [regions, setRegions] = useState(initialRegions);
@@ -190,6 +199,38 @@ export default function Search() {
   // 결과 상태
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
+
+// ✅ 숫자만 바꾸기 위한 "미리보기 개수"
+const [previewCount, setPreviewCount] = useState(null);
+const [previewLoading, setPreviewLoading] = useState(false);
+
+// ✅ state(현재 선택값) -> querystring 만들기 (page 제외)
+const buildQueryKey = ({ regions, q, sort, themes, desserts }) => {
+  const p = new URLSearchParams();
+  if (regions?.length) p.set("region", regions.join(","));
+  if ((q ?? "").trim()) p.set("q", (q ?? "").trim());
+  if (sort) p.set("sort", sort);
+  if (themes?.length) p.set("themes", themes.join(","));
+  if (desserts?.length) p.set("desserts", desserts.join(","));
+  return p.toString();
+};
+
+// ✅ URL(spKey)에서 page 제거한 appliedKey
+const appliedKeyNoPage = useMemo(() => {
+  const p = new URLSearchParams(spKey);
+  p.delete("page");
+  return p.toString();
+}, [spKey]);
+
+// ✅ state 기준 draftKey
+const draftKeyNoPage = useMemo(() => {
+  return buildQueryKey({ regions, q, sort, themes, desserts });
+}, [regions, q, sort, themes, desserts]);
+
+// ✅ 지금 선택값이 "적용된 값"과 다른가?
+const isDraft = draftKeyNoPage !== appliedKeyNoPage;
+
+
 
    // ✅ 현재 스크롤을 ref로만 추적 (뒤로가기 복원용)
   useEffect(() => {
@@ -223,6 +264,9 @@ export default function Search() {
     setThemes((params.get("themes") ?? "").split(",").filter(Boolean));
     setDesserts((params.get("desserts") ?? "").split(",").filter(Boolean));
     
+
+      setMoods((params.get("moods") ?? "").split(",").filter(Boolean));
+  setMusts((params.get("must") ?? "").split(",").filter(Boolean));
     setPage(Math.max(1, Number(params.get("page") || 1)));
   }, [spKey]);
     
@@ -253,6 +297,8 @@ export default function Search() {
     const nextThemes = next.themes ?? themes;
     const nextDesserts = next.desserts ?? desserts;
 
+      const nextMoods = next.moods ?? moods;
+  const nextMusts = next.musts ?? musts;
     const nextPage = next.page ?? 1;
 
     if (nextRegions?.length) params.set("region", nextRegions.join(","));
@@ -261,12 +307,17 @@ export default function Search() {
     if (nextThemes?.length) params.set("themes", nextThemes.join(","));
     if (nextDesserts?.length) params.set("desserts", nextDesserts.join(","));
 
+    if (nextMoods?.length) params.set("moods", nextMoods.join(","));
+  if (nextMusts?.length) params.set("must", nextMusts.join(","));
+
     if (nextPage > 1) params.set("page", String(nextPage));
     const nextKey = params.toString();
     if (nextKey !== spKey) {
       setSp(params, { replace: true });
     }
   };
+
+  
 
 
 
@@ -330,6 +381,44 @@ export default function Search() {
     };
   }, [spKey]);
 
+  // ✅ 선택(state)이 바뀌면 "개수만" 미리보기로 갱신 (리스트는 안 바꿈)
+useEffect(() => {
+  let alive = true;
+
+  // draft가 아니면(=적용값과 같으면) 미리보기 끔
+  if (!isDraft) {
+    setPreviewCount(null);
+    setPreviewLoading(false);
+    return;
+  }
+
+  // 입력/클릭 연타 대비 debounce
+  const t = setTimeout(async () => {
+    try {
+      setPreviewLoading(true);
+
+      const qs = draftKeyNoPage;
+      const data = await apiFetch(`/api/cafes${qs ? `?${qs}` : ""}`);
+
+      if (!alive) return;
+      const items = Array.isArray(data.items) ? data.items : [];
+      setPreviewCount(items.length); // ✅ 개수만 갱신
+    } catch (e) {
+      if (!alive) return;
+      setPreviewCount(null);
+      console.error(e);
+    } finally {
+      if (alive) setPreviewLoading(false);
+    }
+  }, 200);
+
+  return () => {
+    alive = false;
+    clearTimeout(t);
+  };
+}, [draftKeyNoPage, isDraft]);
+
+
 
    // ✅ 뒤로/앞으로(POP)로 돌아왔을 때: 클릭했던 카드 위치로 복원 (1회만)
 // ✅ 뒤로/앞으로(POP)로 돌아왔을 때: 클릭했던 카드 위치로 복원 (1회만)
@@ -385,7 +474,55 @@ const regionPills = useMemo(() => {
   
 
   const summaryQ = sp.get("q") ?? "";
-  const count = results.length;
+  const count = isDraft
+  ? (previewLoading ? "..." : (previewCount ?? results.length))
+  : results.length;
+  // ✅ 검색결과 상단(전체 pill 자리)에 보여줄 "선택된 필터 칩"들
+const summaryChips = useMemo(() => {
+  const chips = [];
+
+  // 지역(선택 없으면 '전체'는 pill로만 보여줄 거라 chips엔 안 넣음)
+  regions.forEach((v) => {
+    const label = REGION_OPTIONS.find((o) => o.value === v)?.label ?? v;
+    chips.push({ group: "지역", value: v, label });
+  });
+
+  // 테마
+  themes.forEach((k) => {
+    const label = THEME_OPTIONS.find((t) => t.key === k)?.label ?? k;
+    chips.push({ group: "테마", value: k, label });
+  });
+
+  // 디저트
+  desserts.forEach((d) => {
+    chips.push({ group: "디저트", value: d, label: d });
+  });
+
+  return chips;
+}, [regions, themes, desserts]);
+
+const removeSummaryChip = (chip) => {
+  const nextRegions =
+    chip.group === "지역" ? regions.filter((v) => v !== chip.value) : regions;
+  const nextThemes =
+    chip.group === "테마" ? themes.filter((v) => v !== chip.value) : themes;
+  const nextDesserts =
+    chip.group === "디저트" ? desserts.filter((v) => v !== chip.value) : desserts;
+
+  // 1) UI 상태 즉시 반영
+  setRegions(nextRegions);
+  setThemes(nextThemes);
+  setDesserts(nextDesserts);
+
+  // 2) URL도 같이 갱신해서 "검색 결과"가 바로 바뀌게
+  pushParams({
+    page: 1,
+    regions: nextRegions,
+    themes: nextThemes,
+    desserts: nextDesserts,
+  });
+};
+
 
   const toggleTheme = (key) => {
     setThemes((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
@@ -395,6 +532,47 @@ const regionPills = useMemo(() => {
     setDesserts((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
   
+// ✅ Sidebar처럼 "선택된 필터" 표시용 라벨
+const regionLabel = (value) =>
+  REGION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+
+const themeLabel = (key) =>
+  THEME_OPTIONS.find((o) => o.key === key)?.label ?? key;
+
+// ✅ 선택 여부
+const hasSelection = regions.length + themes.length + desserts.length > 0;
+
+// ✅ 선택된 칩 리스트(상단에 '선택된 필터가 없습니다' / 칩들 표시)
+const activeChips = useMemo(() => {
+  const chips = [];
+  regions.forEach((v) => chips.push({ group: "지역", value: v, label: regionLabel(v) }));
+  themes.forEach((v) => chips.push({ group: "테마", value: v, label: themeLabel(v) }));
+  desserts.forEach((v) => chips.push({ group: "디저트", value: v, label: v }));
+  return chips;
+}, [regions, themes, desserts]);
+
+// ✅ 칩 클릭 시 해제
+const removeChip = (chip) => {
+  if (chip.group === "지역") setRegions((p) => p.filter((x) => x !== chip.value));
+  if (chip.group === "테마") setThemes((p) => p.filter((x) => x !== chip.value));
+  if (chip.group === "디저트") setDesserts((p) => p.filter((x) => x !== chip.value));
+};
+
+// ✅ Sidebar 스타일 칩 버튼(클래스만 Sidebar와 동일하게 씀)
+const ChipButton = ({ selected, onClick, children }) => (
+  <button
+    type="button"
+    className={`filter-chip-wrap ${selected ? "is-selected" : ""}`}
+    onClick={onClick}
+    aria-pressed={selected}
+  >
+    <div className="filter-chip-inner">
+      <div className="filter-chip-text">{children}</div>
+    </div>
+  </button>
+);
+
+
 
  const toggleRegion = (val) => {
   setRegions((prev) =>
@@ -402,36 +580,30 @@ const regionPills = useMemo(() => {
   );
 };
 
-  const resetFilters = () => {
-    // 지역/검색어는 유지하고, 필터/정렬만 초기화
-    const keepRegions = regions;
-    const keepQ = q;
+const resetFilters = () => {
+  // 1) 필터/검색어/정렬/페이지 전부 초기화 (UI 상태)
+  setRegions([]);
+  setThemes([]);
+  setDesserts([]);
+  setMoods([]);
+  setMusts([]);
+  setQ("");
+  setSort("relevance");
+  setPage(1);
 
-    setRegions([]);          // 전체(=지역 선택 해제)
-  setQ("");                // 검색어 제거
-  setSort("relevance");    // 정렬 기본값
-  setThemes([]);           // 테마 해제
-  setDesserts([]);         // 디저트 해제
+  // 2) 미리보기 카운트도 초기화
+  setPreviewCount(null);
+  setPreviewLoading(false);
 
-  // 2) URL 파라미터도 전부 삭제 (검색결과 상단 pill도 같이 초기화됨)
+  // 3) 초기화 누르는 즉시 스켈레톤 보여주기 (빈 화면 방지)
+  setLoading(true);
+
+  // 4) URL 파라미터를 싹 비움 -> spKey="" -> useEffect([spKey])가 돌면서
+  //    /api/cafes 로 호출되고 "전체 결과"로 results가 다시 채워짐
   setSp(new URLSearchParams(), { replace: true });
+};
 
 
-    
-    setSort("relevance");
-    setThemes([]);
-    setDesserts([]);
-
-    
-
-    pushParams({
-      regions: keepRegions,
-      q: keepQ,
-      sort: "relevance",
-      themes: [],
-      desserts: [],
-    });
-  };
 
   const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   const startPage = Math.floor((page - 1) / 10) * 10 + 1;
@@ -456,20 +628,36 @@ const endPage = Math.min(startPage + 9, totalPages);
         <div className="sr-container">
           <div className="sr-title">
             <h1>검색 결과</h1>
-            <p className="sr-summary">
-              {regionPills.map((label) => (
-                <span key={label} className="pill">{label}</span>
+         <p className="sr-summary">
+  {/* 지역 선택이 하나도 없으면 '전체'만 pill로 표시 */}
+  {regions.length === 0 && <span className="pill">전체</span>}
+
+  {/* ✅ 선택된 필터는 전부 ✕ 있는 칩으로 표시 */}
+  {summaryChips.map((chip) => (
+    <button
+      key={`${chip.group}-${chip.value}`}
+      type="button"
+      className="active-filter-chip"
+      onClick={() => removeSummaryChip(chip)}
+      title="클릭하면 해제됩니다"
+    >
+      <span className="chip-group">{chip.group}</span>
+      <span className="chip-value">{chip.label}</span>
+      <span className="chip-x">✕</span>
+    </button>
   ))}
 
-              {summaryQ ? (
-                <>
-                  <span className="dot">·</span>
-                  <span className="pill">“{summaryQ}”</span>
-                </>
-              ) : null}
-              <span className="dot">·</span>
-              <span className="count">{count}개</span>
-            </p>
+  {summaryQ ? (
+    <>
+      <span className="dot">·</span>
+      <span className="pill">“{summaryQ}”</span>
+    </>
+  ) : null}
+
+  <span className="dot">·</span>
+  <span className="count">{count}개</span>
+</p>
+
           </div>
 
           <form className="sr-search" onSubmit={applySearch}>
@@ -511,80 +699,102 @@ const endPage = Math.min(startPage + 9, totalPages);
 
       {/* 본문: 필터 + 결과 */}
       <main className="sr-container sr-body">
-        <aside className="sr-filters">
-          <div className="box">
-            <div className="box-head">
-              <h2>필터</h2>
-              <button className="linkish" type="button" onClick={resetFilters}>
-                초기화
-              </button>
-            </div>
+<aside className="sr-filters">
+  <div className="sidebar-layout">
+    <div className="sidebar-content-wrap">
+      {/* ✅ 1) 필터 헤더(사이드바 스타일) */}
+      <div className="sidebar-header">
+        <div className="filter-title-group">
+          <div className="icon">🧁</div>
+          <div className="text">필터</div>
+        </div>
 
-            <div className="filter-block">
-                <div className="filter-title">지역</div>
-                  <div className="check-list">
-                    {/* 전체(= regions 비우기) */}
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={regions.length === 0}
-                        onChange={() => setRegions([])}
-                      />
-                      <span>전체</span>
-                    </label>
+        <div className="filter-actions-group">
+          <button type="button" className="filter-reset-btn" onClick={resetFilters}>
+            초기화
+          </button>
+        </div>
+      </div>
 
-                    {REGION_OPTIONS.filter((o) => o.value !== "all").map((opt) => (
-                      <label key={opt.value} className="check">
-                        <input
-                          type="checkbox"
-                          checked={regions.includes(opt.value)}
-                          onChange={() => toggleRegion(opt.value)}
-                        />
-                        <span>{opt.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+     
+      {/* ✅ 3) 지역(체크박스 → 칩) */}
+      <div className="filter-group">
+        <div className="filter-group-title">
+          <div className="text">지역</div>
+        </div>
 
+        <div className="filter-options-container region-group">
+          {/* "전체"는 기존 로직 유지: regions 비우기 */}
+          <ChipButton selected={regions.length === 0} onClick={() => setRegions([])}>
+            전체
+          </ChipButton>
 
+          {REGION_OPTIONS.filter((o) => o.value !== "all").map((opt) => (
+            <ChipButton
+              key={opt.value}
+              selected={regions.includes(opt.value)}
+              onClick={() => toggleRegion(opt.value)}
+            >
+              {opt.label}
+            </ChipButton>
+          ))}
+        </div>
+      </div>
 
-          <div className="filter-block">
-            <div className="filter-title">테마</div>
-            <div className="check-list">
-              {THEME_OPTIONS.map((t) => (
-                <label key={t.key} className="check">
-                  <input
-                    type="checkbox"
-                    checked={themes.includes(t.key)}
-                    onChange={() => toggleTheme(t.key)}
-                  />
-                  <span>{t.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+      {/* ✅ 4) 테마(체크박스 → 칩) */}
+      <div className="filter-group">
+        <div className="filter-group-title">
+          <div className="text">테마</div>
+        </div>
 
-            <div className="filter-block">
-              <div className="filter-title">디저트</div>
-              <div className="chips">
-                {DESSERT_OPTIONS.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    className={`chip ${desserts.includes(d) ? "on" : ""}`}
-                    onClick={() => toggleDessert(d)}
-                  >
-                    {d}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="filter-options-container">
+          {THEME_OPTIONS.map((t) => (
+            <ChipButton
+              key={t.key}
+              selected={themes.includes(t.key)}
+              onClick={() => toggleTheme(t.key)}
+            >
+              {t.label}
+            </ChipButton>
+          ))}
+        </div>
+      </div>
 
-            <button className="sr-btn" type="button" onClick={() => pushParams({page: 1})}>
-              필터 적용
-            </button>
-          </div>
-        </aside>
+      {/* ✅ 5) 디저트(기존 버튼이 이미 칩이라 Sidebar 클래스만 적용) */}
+      <div className="filter-group">
+        <div className="filter-group-title">
+          <div className="text">디저트</div>
+        </div>
+
+        <div className="filter-options-container">
+          {DESSERT_OPTIONS.map((d) => (
+            <ChipButton
+              key={d}
+              selected={desserts.includes(d)}
+              onClick={() => toggleDessert(d)}
+            >
+              {d}
+            </ChipButton>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {/* ✅ 6) 하단 고정 버튼(필터 적용 → Sidebar처럼) */}
+    <div className="sidebar-footer">
+      <button
+        type="button"
+        className="sidebar-search-btn"
+        onClick={() => pushParams({ page: 1 })}
+        title="선택한 필터로 검색"
+      >
+        <span className="icon">🔍</span>
+        <span className="text">검색</span>
+      </button>
+    </div>
+  </div>
+</aside>
+
 
         <section className="sr-results">
           {loading ? (

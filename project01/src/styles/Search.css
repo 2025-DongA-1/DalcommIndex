@@ -337,3 +337,57 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.sr-page .sr-filters,
+.sr-page .sr-filters .sidebar-layout,
+.sr-page .sr-filters .sidebar-content-wrap {
+  background: #fff !important;
+}
+
+.sr-page .sr-filters .sidebar-layout{
+  min-height: unset !important;
+  height: auto !important;
+}
+
+.sr-page .sr-filters .sidebar-footer{
+  position: static !important;   /* ✅ 고정 해제 */
+  margin-top: 12px;
+  padding: 0 16px 16px;
+  background: #fff;
+}
+
+/* ✅ Search 필터: 전체 높이(100vh) 강제 해제 → 빈 여백 사라짐 */
+.sr-page .sr-filters .sidebar-layout{
+  min-height: 0 !important;
+  height: auto !important;
+  display: block !important;   /* flex 해제 느낌 */
+}
+
+.sr-page .sr-filters .sidebar-content-wrap{
+  flex: none !important;
+  padding-bottom: 0 !important; /* footer 대비용 큰 패딩 있으면 제거 */
+}
+
+.sr-page .sr-filters .sidebar-footer{
+  position: static !important;  /* 아래 고정 해제 */
+  margin-top: 14px;
+  padding: 0 16px 16px;
+  background: #fff;
+}
+
+/* 검색결과 상단 요약칩 */
+.sr-summary .active-filter-chip{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,111,145,0.35);
+  background:rgba(255,111,145,0.10);
+  cursor:pointer;
+  font-size:12px;
+}
+.sr-summary .chip-group{ font-weight:800; opacity:.75; }
+.sr-summary .chip-value{ font-weight:700; }
+.sr-summary .chip-x{ opacity:.7; }
+
