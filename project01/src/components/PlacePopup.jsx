@@ -249,6 +249,15 @@ const CANON = {
   카타이프: "카다이프",
 };
 
+function cleanText(v) {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+  const lower = s.toLowerCase();
+  if (s === "\\N" || lower === "null" || lower === "undefined" || lower === "nan") return "";
+  return s;
+}
+
 // 토큰 분리( | , / · 줄바꿈 + 공백 )
 function splitTokens(input) {
   if (input == null) return [];
@@ -283,16 +292,28 @@ function normToken(t) {
     .replace(/\s+/g, "")
     .trim();
   if (!v) return "";
+
+  const lower = v.toLowerCase();
+  if (v === "\\N" || lower === "null" || lower === "undefined" || lower === "nan") return "";
+
   return CANON[v] || v;
 }
 
 function normalizeParking(v) {
-  if (v == null) return "";
-  if (typeof v === "boolean") return v ? "가능" : "불가";
-  const s = String(v).trim();
+  const s = cleanText(v);
   if (!s) return "";
-  if (/(가능|O|있음|주차가능)/i.test(s)) return "가능";
-  if (/(불가|X|없음|주차불가)/i.test(s)) return "불가";
+
+  // "불가/없음"이 데이터 미기재 의미로 쓰인 경우 → 빈칸 처리
+  if (/^(불가|없음)$/i.test(s)) return "";
+
+  // 명시적으로 주차를 말하는 경우만 표시
+  if (/(주차\s*가능|주차가능)/i.test(s)) return "가능";
+  if (/(주차\s*불가|주차불가)/i.test(s)) return "불가";
+
+  // 그 외 표현(있음/O, X 등)
+  if (/(가능|O|있음)/i.test(s)) return "가능";
+  if (/(X)/i.test(s)) return "불가";
+
   return s;
 }
 
@@ -702,15 +723,21 @@ export default function PlacePopup({ open, place, onClose }) {
   // ✅ 팝업이 닫혀있거나 place 없으면 렌더링 안함 (하지만 훅은 위에서 이미 모두 호출됨)
   if (!open || !place) return null;
 
-  const address = mergedPlace?.address || "주소 정보 없음";
-  const region = mergedPlace?.region || "";
+  const address = cleanText(mergedPlace?.address) || "주소 정보 없음";
+  const region = cleanText(mergedPlace?.region);
   const ratingValue = mergedPlace?.userRatingAvg ?? mergedPlace?.rating;
   const ratingNum = ratingValue == null ? null : Number(ratingValue);
   const hasRating = Number.isFinite(ratingNum);
 
-  const phone = mergedPlace?.phone || mergedPlace?.tel || mergedPlace?.telephone || mergedPlace?.contact || "";
-  const homepage = mergedPlace?.homepage || mergedPlace?.site || mergedPlace?.website || mergedPlace?.url || "";
-  const hours = mergedPlace?.hours || mergedPlace?.open_hours || mergedPlace?.openTime || mergedPlace?.time || "";
+  const phone = cleanText(
+    mergedPlace?.phone || mergedPlace?.tel || mergedPlace?.telephone || mergedPlace?.contact
+  );
+  const homepage = cleanText(
+    mergedPlace?.homepage || mergedPlace?.site || mergedPlace?.website || mergedPlace?.url
+  );
+  const hours = cleanText(
+    mergedPlace?.hours || mergedPlace?.open_hours || mergedPlace?.openTime || mergedPlace?.time
+  );
 
   // ✅ 중복 제거 + 재분류 결과
 // 기존: const atmosText = joinTags(cat.atmos); ...
@@ -719,7 +746,8 @@ export default function PlacePopup({ open, place, onClose }) {
   const purposeText = joinTags(cat.purpose);
   const menuText = joinTags(cat.menu);        // ✅ 메뉴만
   const keywordsText = joinTags(cat.keywords);
-  const parkingText = cat.parking || normalizeParking(place?.parking);
+  const parkingText = cleanText(cat.parking) || normalizeParking(place?.parking);
+
 
   const desc = mergedPlace?.content || mergedPlace?.summary || mergedPlace?.desc || "";
 
@@ -891,11 +919,11 @@ export default function PlacePopup({ open, place, onClose }) {
           {tab === "home" && (
             <>
               <div className="pp-chipRow">
-                {atmosText && <span className="pp-chip">분위기: {atmosText}</span>}
-                {tasteText && <span className="pp-chip">맛: {tasteText}</span>}
-                {purposeText && <span className="pp-chip">목적: {purposeText}</span>}
-                {menuText && <span className="pp-chip">메뉴: {menuText}</span>}
-                {parkingText && <span className="pp-chip">주차: {parkingText}</span>}
+                <span className="pp-chip">분위기:{atmosText ? ` ${atmosText}` : ""}</span>
+                <span className="pp-chip">맛:{tasteText ? ` ${tasteText}` : ""}</span>
+                <span className="pp-chip">목적:{purposeText ? ` ${purposeText}` : ""}</span>
+                <span className="pp-chip">메뉴:{menuText ? ` ${menuText}` : ""}</span>
+                <span className="pp-chip">주차:{parkingText ? ` ${parkingText}` : ""}</span>
               </div>
 
               {/* {keywordsText ? (

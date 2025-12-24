@@ -97,7 +97,7 @@ export function buildFollowUpQuestion(prefs) {
   const menu = hasAny(p.menu);
   const required = hasAny(p.required);
 
-  if (!region) return "어느 지역을 원하세요? (광주 / 나주 / 담양 / 화순 / 장성)";
+  if (!region) return "어느 지역을 원하세요? (광주 / 나주 / 담양 / 화순)";
   if (!purpose && !atmos) return "어떤 느낌으로 찾으세요? (공부/작업 / 데이트 / 조용한 / 감성 / 뷰)";
   if (!purpose) return "방문 목적이 있으세요? (공부/작업 / 데이트 / 수다 / 가족)";
   if (!atmos) return "원하시는 분위기를 알려주실까요? (조용한 / 감성 / 뷰)";

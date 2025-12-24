@@ -435,7 +435,7 @@ function pickCafeResultFields(cafe) {
     menu: cafe.menu,
     main_dessert: cafe.main_dessert,
     main_coffee: cafe.main_coffee,
-    parking: cafe.parking,
+    parking: normalizeStr(cafe.parking),
     x: cafe.x,
     y: cafe.y,
     
@@ -504,7 +504,10 @@ function arrayFromJson(v) {
 }
 
 function normalizeStr(v) {
-  return (v ?? "").toString().trim();
+  const s = (v ?? "").toString().trim();
+  const lower = s.toLowerCase();
+  if (!s || s === "\\N" || lower === "null" || lower === "undefined" || lower === "nan") return "";
+  return s;
 }
 
 function sanitizeThumb(thumb) {
