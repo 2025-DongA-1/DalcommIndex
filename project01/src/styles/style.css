@@ -2763,19 +2763,24 @@ footer {
 }
 
 /* 콘텐츠(스크롤) + footer(고정) 레이아웃 */
-.sidebar-layout {
+.sidebar-layout{
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 100vh;
-  overflow: hidden;
 }
 
-.sidebar-content-wrap {
+.sidebar-content-wrap{
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 전체는 고정, 내부만 스크롤 */
+}
+
+.sidebar-scroll-area{
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  /* footer 높이만큼 여백: 마지막 옵션이 버튼 뒤로 안 숨게 */
-  padding-bottom: 96px;
 }
 
 /* 하단 고정 영역 */

@@ -384,9 +384,10 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
           </div>
 
           {/* 3. 필터 그룹 목록 */}
+        <div className="sidebar-scroll-area">
           {Object.entries(filters).map(([title, options]) => (
             <div key={title} className="filter-group">
-              <div className="filter-group-title">
+                <div className="filter-group-title">
                 <div className="text">{title}</div>
               </div>
               {renderChips(title, options)}
@@ -407,6 +408,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
             <span className="text">검색</span>
           </button>
         </div>
+      </div>
       </div>
     </aside>
   );
