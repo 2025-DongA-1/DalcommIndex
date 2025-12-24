@@ -2,9 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-
-const API_BASE = import.meta.env.VITE_API_BASE || ""; // ✅ 추가: 서버 API base
-const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 추가: 이벤트명 통일
+const API_BASE = import.meta.env.VITE_API_BASE || ""; // ✅ 서버 API base
+const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 이벤트명 통일
 
 async function apiFetch(path, { method = "GET", body } = {}) {
   const token = localStorage.getItem("accessToken");
@@ -49,6 +48,348 @@ function pickFirstImageUrl(place) {
   return "";
 }
 
+/* =========================================================
+ * ✅ 카테고리 정리.txt 기반: 태그 분류 + 중복 제거
+ * - 분위기/방문목적/맛(=메뉴+맛)/주차/키워드(요약)
+ * ========================================================= */
+
+// 카테고리 정리.txt를 그대로 코드화
+const SET_ATMOSPHERE = new Set([
+  // 조용한
+  "조용",
+  "심플",
+  "미니멀",
+
+  // 편안한
+  "편안",
+  "포근",
+  "상큼",
+  "따뜻하다",
+  "묵직",
+  "한적",
+  "안락",
+
+  // 감성적인
+  "감성",
+  "감각",
+  "아늑",
+  "풍미",
+  "전통",
+  "차분",
+  "유럽",
+  "무드",
+  "모던",
+  "잔잔",
+  "한옥",
+  "기와",
+
+  // 상태
+  "깔끔",
+  "넓다",
+  "넓음",
+  "넉넉",
+  "채광",
+  "쾌적",
+  "햇살",
+  "창가",
+  "야외",
+  "테라스",
+  "마당",
+  "좌석",
+  "자리",
+  "따뜻",
+  "전망",
+  "와이파이",
+  "폭신",
+  "넓직",
+  "빈티지",
+  "세련",
+  "산뜻",
+  "뷰",
+  "대관",
+  "리치",
+  "드넓다",
+  "고택",
+
+  // 애견
+  "강아지",
+]);
+
+const SET_MENU = new Set([
+  // 커피/음료
+  "아메리카노",
+  "말차",
+  "카라멜",
+  "라떼",
+  "카페라떼",
+  "에이드",
+  "바닐라빈",
+  "밀크티",
+  "에스프레소",
+  "파르페",
+  "카카오파르페",
+  "콜드브루",
+  "밀크",
+  "다크",
+  "딸게라떼",
+  "딸기라떼",
+
+  // 디저트/식사
+  "케이크",
+  "버터",
+  "마들렌",
+  "쿠키",
+  "샌드위치",
+  "아이스크림",
+  "소금",
+  "샐러드",
+  "브런치",
+  "피자",
+  "파스타",
+  "빙수",
+  "팥빙수",
+  "휘낭시에",
+  "식빵",
+  "파이",
+  "타르트",
+  "푸딩",
+  "토스트",
+  "티라미수",
+  "베이글",
+  "브라우니",
+  "잠봉뵈르",
+  "크루아상",
+  "스콘",
+  "와플",
+  "젤라또",
+  "치즈",
+  "치즈케이크",
+  "스테이크",
+  "팬케이크",
+  "파니니",
+  "포케",
+  "애플파이",
+  "컵케이크",
+  "쫀득쿠키",
+  "버터바",
+  "에그타르트",
+  "크로플",
+  "롤케이크",
+  "쫀득모찌빵",
+  "카타이프",
+  "카다이프",
+]);
+
+// 맛(형용사/재료) - 데이터에 있으면 메뉴와 함께 표시됨
+const SET_TASTE = new Set([
+  "달콤",
+  "쫀득",
+  "고소",
+  "담백",
+  "진하다",
+  "촉촉",
+  "짭짤",
+  "새콤",
+  "쌉싸름",
+
+  // 과일/견과
+  "레몬",
+  "딸기",
+  "바나나",
+  "망고",
+  "땅콩",
+  "피스타치오",
+  "아몬드",
+  "피넛",
+  "호두",
+]);
+
+const SET_PURPOSE = new Set([
+  "힐링",
+  "데이트",
+  "인스타",
+  "수다",
+  "모임",
+  "가족",
+  "작업",
+  "친구",
+  "아기",
+  "아이",
+  "부모",
+  "연인",
+  "포토존",
+  "혼자",
+  "공부",
+  "키즈",
+  "커플",
+  "어린이",
+  "노트북",
+  "유모차",
+  "콘센트",
+  "마을",
+  "어린이집",
+  "반려",
+  "토스트기",
+]);
+
+// 표기 흔들림/동의어 정규화
+const CANON = {
+  넓다: "넓음",
+  넓직: "넓음",
+  드넓다: "넓음",
+  따뜻하다: "따뜻",
+  카페라떼: "라떼",
+  딸게라떼: "딸기라떼",
+  카타이프: "카다이프",
+};
+
+// 토큰 분리( | , / · 줄바꿈 + 공백 )
+function splitTokens(input) {
+  if (input == null) return [];
+  const s = Array.isArray(input) ? input.join("|") : String(input);
+
+  // "분위기:" 같은 라벨이 섞여 있으면 제거
+  const cleaned = s
+    .replace(/(분위기|목적|맛|메뉴|키워드|주차)\s*[:：]\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return [];
+
+  const parts = cleaned
+    .split(/[|,\n·/]/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const out = [];
+  for (const p of parts) {
+    const tokens = p.split(/\s+/g).map((x) => x.trim()).filter(Boolean);
+    out.push(...tokens);
+  }
+  return out;
+}
+
+function normToken(t) {
+  if (!t) return "";
+  const v = String(t)
+    .replace(/[(){}\[\]]/g, "")
+    .replace(/["'`]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
+  if (!v) return "";
+  return CANON[v] || v;
+}
+
+function normalizeParking(v) {
+  if (v == null) return "";
+  if (typeof v === "boolean") return v ? "가능" : "불가";
+  const s = String(v).trim();
+  if (!s) return "";
+  if (/(가능|O|있음|주차가능)/i.test(s)) return "가능";
+  if (/(불가|X|없음|주차불가)/i.test(s)) return "불가";
+  return s;
+}
+
+function joinTags(list, sep = " · ") {
+  const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+  return arr.length ? arr.join(sep) : "";
+}
+
+// place의 여러 필드에서 토큰을 모아 카테고리로 재분류
+function derivePopupCategories(place) {
+  if (!place) {
+    return {
+      atmos: [],
+      purpose: [],
+      tasteMenu: [],
+      keywords: [],
+      parking: "",
+    };
+  }
+
+  const rawBuckets = [
+    place?.atmosphere,
+    place?.atmosphere_norm,
+    place?.purpose,
+    place?.purpose_norm,
+    place?.taste,
+    place?.taste_norm,
+    place?.menu,
+    place?.mainMenu,
+    place?.main_menu,
+    place?.keywords,
+    place?.keyword,
+    place?.keyWords,
+    Array.isArray(place?.tags) ? place.tags : null,
+    Array.isArray(place?.keywordCounts)
+      ? place.keywordCounts
+          .map((w) => w?.text ?? w?.word ?? "")
+          .filter(Boolean)
+      : null,
+  ].filter((v) => v != null);
+
+  const all = [];
+  for (const v of rawBuckets) {
+    all.push(...splitTokens(v));
+  }
+
+  const seen = new Set();
+  const atmos = [];
+  const purpose = [];
+  const menu = [];
+  const taste = [];
+  const extra = [];
+
+  // 우선순위: 목적 > 메뉴 > 맛 > 분위기 > 기타
+  for (const raw of all) {
+    const t = normToken(raw);
+    if (!t) continue;
+    if (seen.has(t)) continue;
+    seen.add(t);
+
+    if (SET_PURPOSE.has(t)) {
+      purpose.push(t);
+      continue;
+    }
+    if (SET_MENU.has(t)) {
+      menu.push(t);
+      continue;
+    }
+    if (SET_TASTE.has(t)) {
+      taste.push(t);
+      continue;
+    }
+    if (SET_ATMOSPHERE.has(t)) {
+      atmos.push(t);
+      continue;
+    }
+    extra.push(t);
+  }
+
+  // "맛:"에는 메뉴+맛을 같이 보여주기
+  const tasteMenu = [];
+  const tmSeen = new Set();
+  for (const t of [...taste, ...menu]) {
+    if (tmSeen.has(t)) continue;
+    tmSeen.add(t);
+    tasteMenu.push(t);
+  }
+
+  // 키워드(요약): 메뉴/맛/분위기/목적/기타 합쳐서 앞부분만
+  const keywords = [];
+  const kwSeen = new Set();
+  for (const t of [...menu, ...taste, ...atmos, ...purpose, ...extra]) {
+    if (kwSeen.has(t)) continue;
+    kwSeen.add(t);
+    keywords.push(t);
+    if (keywords.length >= 12) break;
+  }
+
+  const parking = normalizeParking(place?.parking);
+
+  return { atmos, purpose, tasteMenu, keywords, parking };
+}
+
 export default function PlacePopup({ open, place, onClose }) {
   const navigate = useNavigate();
 
@@ -65,15 +406,13 @@ export default function PlacePopup({ open, place, onClose }) {
   const [reviewCount, setReviewCount] = useState(0);
   const [reviewItems, setReviewItems] = useState([]);
 
-  // ✅ API URL
-  const REVIEWS_URL = `${API_BASE}/api/reviews`;
-
   // ✅ 안전한 카페 ID 계산
   const name = place?.name || place?.cafe_name || place?.title || "카페";
   const cafeIdRaw = place?.cafe_id ?? place?.cafeId ?? place?.id ?? place?.place_id;
   const cafeId = cafeIdRaw != null ? String(cafeIdRaw) : "";
   const favoriteCafeId = Number(cafeIdRaw); // ✅ 서버 favorites는 숫자 id를 기대하는 경우가 많음
   const hasValidFavoriteId = Number.isFinite(favoriteCafeId);
+
   /** ESC 닫기 */
   useEffect(() => {
     if (!open) return;
@@ -130,7 +469,7 @@ export default function PlacePopup({ open, place, onClose }) {
   }, [open, place, hasValidFavoriteId, favoriteCafeId]);
 
   /**
-   * ✅ 수정: 다른 화면에서 즐겨찾기가 변경되면(이벤트) 팝업 버튼도 서버 기준으로 재동기화
+   * ✅ 다른 화면에서 즐겨찾기가 변경되면(이벤트) 팝업 버튼도 서버 기준으로 재동기화
    */
   useEffect(() => {
     if (!open || !place) return;
@@ -158,7 +497,6 @@ export default function PlacePopup({ open, place, onClose }) {
     window.addEventListener(FAVORITES_EVENT, handler);
     return () => window.removeEventListener(FAVORITES_EVENT, handler);
   }, [open, place, hasValidFavoriteId, favoriteCafeId]);
-
 
   const photos = useMemo(() => {
     if (!place) return [];
@@ -193,13 +531,16 @@ export default function PlacePopup({ open, place, onClose }) {
     return uniq;
   }, [place]);
 
+  // ✅ (핵심) 카테고리 재분류 + 중복 제거 (훅은 반드시 return 이전에)
+  const cat = useMemo(() => derivePopupCategories(place), [place]);
+
   /** ✅ 저장 버튼 클릭 */
   const onToggleSave = async () => {
     if (!place || saveLoading) return;
 
     const token = localStorage.getItem("accessToken");
     if (!token) {
-      navigate("/login"); // ✅ 수정: 팝업에서도 상세페이지처럼 로그인 필요
+      navigate("/login");
       return;
     }
 
@@ -214,7 +555,7 @@ export default function PlacePopup({ open, place, onClose }) {
         await apiFetch("/api/me/favorites", {
           method: "POST",
           body: {
-            cafe_id: favoriteCafeId, // ✅ 수정: 서버가 기대하는 키로 전송
+            cafe_id: favoriteCafeId,
             name: place?.name || name,
             region: place?.region || "",
             address: place?.address || "",
@@ -230,7 +571,6 @@ export default function PlacePopup({ open, place, onClose }) {
         setSaved(false);
       }
 
-      // ✅ 수정: 마이페이지/다른 화면이 즉시 갱신되도록 이벤트 통일 발행
       window.dispatchEvent(new Event(FAVORITES_EVENT));
     } catch (e) {
       if (e?.status === 401 || e?.status === 403) {
@@ -245,7 +585,7 @@ export default function PlacePopup({ open, place, onClose }) {
     }
   };
 
-// ✅ 리뷰 불러오기(리뷰 탭 열릴 때)
+  // ✅ 리뷰 불러오기(리뷰 탭 열릴 때)
   useEffect(() => {
     if (!open || !place) return;
     if (tab !== "review") return;
@@ -266,13 +606,10 @@ export default function PlacePopup({ open, place, onClose }) {
         qs.set("limit", "20");
         qs.set("offset", "0");
 
-        // ✅ 서버 라우트에 맞춤
         const path = `/api/cafes/${encodeURIComponent(String(favoriteCafeId))}/user-reviews?${qs.toString()}`;
 
-        // ✅ 토큰 포함해서 호출
         const data = await apiFetch(path, { signal: controller.signal });
 
-        // 기존 유연 파싱 로직은 그대로 사용
         const items = Array.isArray(data)
           ? data
           : Array.isArray(data.reviews)
@@ -297,11 +634,9 @@ export default function PlacePopup({ open, place, onClose }) {
             ? data.count
             : norm.length
         );
-        // setReviewAvg(...)는 기존 로직 유지
       } catch (e) {
         if (e?.name === "AbortError") return;
 
-        // 인증 필요하면 로그인 유도(즐겨찾기 처리처럼)
         if (e?.status === 401 || e?.status === 403) {
           localStorage.removeItem("accessToken");
           localStorage.removeItem("user");
@@ -317,7 +652,7 @@ export default function PlacePopup({ open, place, onClose }) {
 
     loadReviews();
     return () => controller.abort();
-  }, [open, place, tab, hasValidFavoriteId, favoriteCafeId, apiFetch, navigate]);
+  }, [open, place, tab, hasValidFavoriteId, favoriteCafeId, navigate]);
 
   const formatDate = (v) => {
     if (!v) return "";
@@ -336,6 +671,7 @@ export default function PlacePopup({ open, place, onClose }) {
     );
   };
 
+  // ✅ 팝업이 닫혀있거나 place 없으면 렌더링 안함 (하지만 훅은 위에서 이미 모두 호출됨)
   if (!open || !place) return null;
 
   const address = place?.address || "주소 정보 없음";
@@ -346,10 +682,12 @@ export default function PlacePopup({ open, place, onClose }) {
   const homepage = place?.homepage || place?.site || place?.website || place?.url || "";
   const hours = place?.hours || place?.open_hours || place?.openTime || place?.time || "";
 
-  const atmos = place?.atmosphere || place?.atmosphere_norm || "";
-  const purpose = place?.purpose || place?.purpose_norm || "";
-  const taste = place?.taste || place?.taste_norm || "";
-  const parking = place?.parking || "";
+  // ✅ 중복 제거 + 재분류 결과
+  const atmosText = joinTags(cat.atmos);
+  const purposeText = joinTags(cat.purpose);
+  const tasteText = joinTags(cat.tasteMenu);
+  const parkingText = cat.parking || normalizeParking(place?.parking);
+  const keywordsText = cat.keywords?.length ? cat.keywords.join(", ") : "";
 
   const desc = place?.content || place?.summary || place?.desc || "";
 
@@ -452,7 +790,7 @@ export default function PlacePopup({ open, place, onClose }) {
             </div>
           </div>
 
-          {/* ✅ 저장/리뷰 버튼 2열 정렬 + 버튼 내부 세로정렬 (정렬은 건드리지 않음) */}
+          {/* ✅ 저장/리뷰 버튼 2열 정렬 (정렬 유지) */}
           <div className="pp-miniActions" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <button
               className={`pp-miniBtn ${saved ? "is-on" : ""}`}
@@ -509,18 +847,10 @@ export default function PlacePopup({ open, place, onClose }) {
             >
               리뷰
             </button>
-            <button
-              type="button"
-              className={`pp-tab ${tab === "photo" ? "active" : ""}`}
-              onClick={() => setTab("photo")}
-            >
+            <button type="button" className={`pp-tab ${tab === "photo" ? "active" : ""}`} onClick={() => setTab("photo")}>
               사진
             </button>
-            <button
-              type="button"
-              className={`pp-tab ${tab === "info" ? "active" : ""}`}
-              onClick={() => setTab("info")}
-            >
+            <button type="button" className={`pp-tab ${tab === "info" ? "active" : ""}`} onClick={() => setTab("info")}>
               정보
             </button>
           </div>
@@ -528,13 +858,19 @@ export default function PlacePopup({ open, place, onClose }) {
           {tab === "home" && (
             <>
               <div className="pp-chipRow">
-                {atmos ? <span className="pp-chip">분위기: {atmos}</span> : null}
-                {purpose ? <span className="pp-chip">목적: {purpose}</span> : null}
-                {taste ? <span className="pp-chip">맛: {taste}</span> : null}
-                {parking ? <span className="pp-chip">주차: {parking}</span> : null}
+                {atmosText ? <span className="pp-chip">분위기: {atmosText}</span> : null}
+                {purposeText ? <span className="pp-chip">목적: {purposeText}</span> : null}
+                {tasteText ? <span className="pp-chip">맛: {tasteText}</span> : null}
+                {parkingText ? <span className="pp-chip">주차: {parkingText}</span> : null}
               </div>
 
-              {desc ? <div className="pp-desc">{desc}</div> : null}
+              {/* {keywordsText ? (
+                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85, lineHeight: 1.35 }}>
+                  키워드: {keywordsText}
+                </div>
+              ) : null} */}
+
+              {/* {desc ? <div className="pp-desc">{desc}</div> : null} */}
 
               <div className="pp-infoBox">
                 <InfoRow label="주소" value={address} />
@@ -645,7 +981,7 @@ export default function PlacePopup({ open, place, onClose }) {
                 <InfoRow label="전화" value={phone} href={phone ? `tel:${phone}` : ""} />
                 <InfoRow label="영업" value={hours} />
                 <InfoRow label="홈페이지" value={homepage} href={homepage} />
-                <InfoRow label="주차" value={parking} />
+                <InfoRow label="주차" value={parkingText} />
               </div>
 
               <div className="pp-bottomActions">
