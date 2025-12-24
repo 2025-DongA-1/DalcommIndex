@@ -157,6 +157,135 @@ function parseKeywords(raw) {
     .filter(Boolean);
 }
 
+// ✅ 방문 목적(추가)
+const PURPOSE_OPTIONS = [
+  { key: "date", label: "데이트", aliases: ["데이트", "커플", "연인"] },
+  { key: "study", label: "공부·작업(콘센트, 와이파이)", aliases: ["공부", "작업", "콘센트", "와이파이", "wifi", "wi-fi", "노트북"] },
+  { key: "family", label: "가족·아이", aliases: ["가족", "아이", "키즈", "유아", "아기"] },
+  { key: "solo", label: "혼카페", aliases: ["혼카페", "혼자"] },
+  { key: "group", label: "모임(단체석)", aliases: ["모임", "단체", "단체석", "회식"] },
+  { key: "anniversary", label: "기념일(예약, 홀케이크)", aliases: ["기념일", "예약", "홀케이크", "생일", "파티"] },
+];
+
+// ✅ 분위기(추가)
+const MOOD_OPTIONS = [
+  { key: "quiet", label: "조용한", aliases: ["조용", "조용한", "차분", "정숙"] },
+  { key: "emotional", label: "감성", aliases: ["감성", "무드", "분위기"] },
+  { key: "photo", label: "사진 잘 나오는", aliases: ["사진", "포토", "포토존", "인생샷"] },
+  { key: "spacious", label: "넓은·쾌적", aliases: ["넓", "넓은", "쾌적", "공간", "좌석 많"] },
+  { key: "cozy", label: "아늑한", aliases: ["아늑", "포근", "따뜻"] },
+  { key: "hip", label: "힙한", aliases: ["힙", "트렌디", "감각", "핫플"] },
+  { key: "vintage", label: "빈티지", aliases: ["빈티지", "레트로"] },
+  { key: "view", label: "뷰맛집(야외/루프탑)", aliases: ["뷰", "야외", "루프탑", "테라스", "경치"] },
+];
+
+const MOOD_MAP = Object.fromEntries(MOOD_OPTIONS.map((o) => [o.key, o]));
+
+const matchesMood = (cafe, key) => {
+  const opt = MOOD_MAP[key];
+  if (!opt) return true;
+
+  const hay = [
+    cafe?.name,
+    cafe?.address,
+    cafe?.excerpt,
+    ...(Array.isArray(cafe?.why) ? cafe.why : []),
+    ...(Array.isArray(cafe?.keywords) ? cafe.keywords : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return opt.aliases.some((w) => hay.includes(String(w).toLowerCase()));
+};
+
+const filterByMoods = (items, moods) => {
+  if (!moods?.length) return items;
+  return items.filter((cafe) => moods.every((m) => matchesMood(cafe, m)));
+};
+
+// ✅ 편의 조건(필수 조건, 추가)
+const MUST_OPTIONS = [
+  { key: "parking", label: "주차 가능", aliases: ["주차", "주차가능", "주차 가능"] },
+  { key: "noKids", label: "노키즈존", aliases: ["노키즈", "노키즈존"] },
+  { key: "pet", label: "반려동물 동반", aliases: ["반려동물", "애견", "펫", "동반"] },
+  { key: "outlet", label: "콘센트", aliases: ["콘센트", "전원", "멀티탭"] },
+  { key: "wifi", label: "와이파이", aliases: ["와이파이", "wifi", "wi-fi"] },
+  { key: "reservation", label: "예약 가능", aliases: ["예약", "예약가능", "예약 가능"] },
+  { key: "group", label: "단체 가능", aliases: ["단체", "단체석", "단체가능", "단체 가능"] },
+];
+
+const MUST_MAP = Object.fromEntries(MUST_OPTIONS.map((o) => [o.key, o]));
+
+const matchesMust = (cafe, key) => {
+  const opt = MUST_MAP[key];
+  if (!opt) return true;
+
+  const hay = [
+    cafe?.name,
+    cafe?.address,
+    cafe?.excerpt,
+    ...(Array.isArray(cafe?.why) ? cafe.why : []),
+    ...(Array.isArray(cafe?.keywords) ? cafe.keywords : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return opt.aliases.some((w) => hay.includes(String(w).toLowerCase()));
+};
+
+const filterByMusts = (items, musts) => {
+  if (!musts?.length) return items;
+  return items.filter((cafe) => musts.every((m) => matchesMust(cafe, m)));
+};
+
+
+const PURPOSE_MAP = Object.fromEntries(PURPOSE_OPTIONS.map((o) => [o.key, o]));
+
+const extractPurposesFromText = (text = "") => {
+  const t = String(text).toLowerCase();
+  return PURPOSE_OPTIONS
+    .filter((opt) => opt.aliases.some((w) => t.includes(String(w).toLowerCase())))
+    .map((opt) => opt.key);
+};
+
+const stripPurposeWordsFromText = (text = "") => {
+  let out = String(text);
+  for (const opt of PURPOSE_OPTIONS) {
+    for (const w of opt.aliases) {
+      const escaped = String(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp(escaped, "gi"), " ");
+    }
+  }
+  return out.replace(/\s+/g, " ").trim();
+};
+
+const matchesPurpose = (cafe, key) => {
+  const opt = PURPOSE_MAP[key];
+  if (!opt) return true;
+
+  const hay = [
+    cafe?.name,
+    cafe?.address,
+    cafe?.excerpt,
+    ...(Array.isArray(cafe?.why) ? cafe.why : []),
+    ...(Array.isArray(cafe?.keywords) ? cafe.keywords : []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return opt.aliases.some((w) => hay.includes(String(w).toLowerCase()));
+};
+
+const filterByPurposes = (items, purposes) => {
+  if (!purposes?.length) return items;
+  return items.filter((cafe) => purposes.every((p) => matchesPurpose(cafe, p)));
+};
+
+
+
 export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
@@ -187,6 +316,8 @@ const initialMusts = (sp.get("must") ?? "").split(",").filter(Boolean);
 const [moods, setMoods] = useState(initialMoods);
 const [musts, setMusts] = useState(initialMusts);
 
+const initialPurposes = (sp.get("purpose") ?? "").split(",").filter(Boolean);
+const [purposes, setPurposes] = useState(initialPurposes);
 
 
   // 폼 상태
@@ -205,15 +336,19 @@ const [previewCount, setPreviewCount] = useState(null);
 const [previewLoading, setPreviewLoading] = useState(false);
 
 // ✅ state(현재 선택값) -> querystring 만들기 (page 제외)
-const buildQueryKey = ({ regions, q, sort, themes, desserts }) => {
+const buildQueryKey = ({ regions, q, sort, themes, desserts, moods, musts, purposes }) => {
   const p = new URLSearchParams();
   if (regions?.length) p.set("region", regions.join(","));
   if ((q ?? "").trim()) p.set("q", (q ?? "").trim());
   if (sort) p.set("sort", sort);
   if (themes?.length) p.set("themes", themes.join(","));
   if (desserts?.length) p.set("desserts", desserts.join(","));
+  if (moods?.length) p.set("moods", moods.join(","));
+  if (musts?.length) p.set("must", musts.join(","));
+  if (purposes?.length) p.set("purpose", purposes.join(",")); // ✅ 방문목적
   return p.toString();
 };
+
 
 // ✅ URL(spKey)에서 page 제거한 appliedKey
 const appliedKeyNoPage = useMemo(() => {
@@ -224,8 +359,8 @@ const appliedKeyNoPage = useMemo(() => {
 
 // ✅ state 기준 draftKey
 const draftKeyNoPage = useMemo(() => {
-  return buildQueryKey({ regions, q, sort, themes, desserts });
-}, [regions, q, sort, themes, desserts]);
+  return buildQueryKey({ regions, q, sort, themes, desserts, moods, musts, purposes });
+}, [regions, q, sort, themes, desserts, moods, musts, purposes]);
 
 // ✅ 지금 선택값이 "적용된 값"과 다른가?
 const isDraft = draftKeyNoPage !== appliedKeyNoPage;
@@ -267,6 +402,7 @@ const isDraft = draftKeyNoPage !== appliedKeyNoPage;
 
       setMoods((params.get("moods") ?? "").split(",").filter(Boolean));
   setMusts((params.get("must") ?? "").split(",").filter(Boolean));
+  setPurposes((params.get("purpose") ?? "").split(",").filter(Boolean));
     setPage(Math.max(1, Number(params.get("page") || 1)));
   }, [spKey]);
     
@@ -299,6 +435,7 @@ const isDraft = draftKeyNoPage !== appliedKeyNoPage;
 
       const nextMoods = next.moods ?? moods;
   const nextMusts = next.musts ?? musts;
+  const nextPurposes = next.purposes ?? purposes;
     const nextPage = next.page ?? 1;
 
     if (nextRegions?.length) params.set("region", nextRegions.join(","));
@@ -309,6 +446,7 @@ const isDraft = draftKeyNoPage !== appliedKeyNoPage;
 
     if (nextMoods?.length) params.set("moods", nextMoods.join(","));
   if (nextMusts?.length) params.set("must", nextMusts.join(","));
+    if (nextPurposes?.length) params.set("purpose", nextPurposes.join(","));
 
     if (nextPage > 1) params.set("page", String(nextPage));
     const nextKey = params.toString();
@@ -321,10 +459,23 @@ const isDraft = draftKeyNoPage !== appliedKeyNoPage;
 
 
 
-  const applySearch = (e) => {
-    if (e) e.preventDefault();
-        pushParams({page: 1});
-  };
+const applySearch = (e) => {
+  if (e) e.preventDefault();
+
+  // 1) q에서 방문목적 키워드 추출
+  const extracted = extractPurposesFromText(q);
+
+  // 2) 기존 선택 + 추출 합치기(중복 제거)
+  const nextPurposes = Array.from(new Set([...(purposes || []), ...extracted]));
+
+  // 3) 방문목적 단어는 q에서 제거 (원치 않으면 이 줄은 빼셔도 됩니다)
+  const nextQ = stripPurposeWordsFromText(q);
+
+  setPurposes(nextPurposes);
+  setQ(nextQ);
+
+  pushParams({ page: 1, q: nextQ, purposes: nextPurposes });
+};
 
   // ✅ URL 변경 -> DB API 호출
   useEffect(() => {
@@ -401,8 +552,22 @@ useEffect(() => {
       const data = await apiFetch(`/api/cafes${qs ? `?${qs}` : ""}`);
 
       if (!alive) return;
-      const items = Array.isArray(data.items) ? data.items : [];
-      setPreviewCount(items.length); // ✅ 개수만 갱신
+     const items = Array.isArray(data.items) ? data.items : [];
+
+const normalized = items.map((x) => ({
+  ...x,
+  thumb: normalizeThumb(x.thumb, x.region),
+  rating: x.rating ?? null,
+  reviewCount: x.reviewCount ?? 0,
+  why: Array.isArray(x.why) ? x.why : [],
+  excerpt: x.excerpt || "",
+  keywords: parseKeywords(x.excerpt),
+  neighborhood: x.neighborhood || "",
+  score: Number(x.score || 0) || 0,
+}));
+
+const previewFiltered = filterByPurposes(normalized, purposes);
+setPreviewCount(previewFiltered.length);
     } catch (e) {
       if (!alive) return;
       setPreviewCount(null);
@@ -471,12 +636,57 @@ const regionPills = useMemo(() => {
   return rs.map((v) => REGION_OPTIONS.find((x) => x.value === v)?.label ?? v);
 }, [spKey]); // spKey 추천(지금 구조랑 맞음)
 
-  
+const appliedPurposes = useMemo(
+  () => (sp.get("purpose") ?? "").split(",").filter(Boolean),
+  [spKey]
+);
+
+const appliedMoods = useMemo(
+  () => (sp.get("moods") ?? "").split(",").filter(Boolean),
+  [spKey]
+);
+
+const appliedMusts = useMemo(
+  () => (sp.get("must") ?? "").split(",").filter(Boolean),
+  [spKey]
+);
+
+
+const filteredResults = useMemo(() => {
+  let out = results;
+  out = filterByPurposes(out, appliedPurposes);
+  out = filterByMoods(out, appliedMoods);
+  out = filterByMusts(out, appliedMusts);
+  return out;
+}, [results, appliedPurposes, appliedMoods, appliedMusts]);
+ const totalPages = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
+
+  const startPage = Math.floor((page - 1) / 10) * 10 + 1;
+const endPage = Math.min(startPage + 9, totalPages);
+
+const pagedResults = useMemo(() => {
+  const start = (page - 1) * PAGE_SIZE;
+  return filteredResults.slice(start, start + PAGE_SIZE);
+}, [filteredResults, page]);
 
   const summaryQ = sp.get("q") ?? "";
-  const count = isDraft
-  ? (previewLoading ? "..." : (previewCount ?? results.length))
-  : results.length;
+const count = isDraft
+  ? (previewLoading ? "..." : (previewCount ?? filteredResults.length))
+  : filteredResults.length;
+
+
+
+// ✅ Sidebar처럼 "선택된 필터" 표시용 라벨
+const regionLabel = (value) =>
+  REGION_OPTIONS.find((o) => o.value === value)?.label ?? value;
+
+const purposeLabel = (key) =>
+  PURPOSE_OPTIONS.find((o) => o.key === key)?.label ?? key;
+
+const themeLabel = (key) =>
+  THEME_OPTIONS.find((o) => o.key === key)?.label ?? key;
+
+
   // ✅ 검색결과 상단(전체 pill 자리)에 보여줄 "선택된 필터 칩"들
 const summaryChips = useMemo(() => {
   const chips = [];
@@ -492,6 +702,24 @@ const summaryChips = useMemo(() => {
     const label = THEME_OPTIONS.find((t) => t.key === k)?.label ?? k;
     chips.push({ group: "테마", value: k, label });
   });
+  
+  // 방문목적
+   purposes.forEach((k) => {
+    const label = purposeLabel(k);
+    chips.push({ group: "방문 목적", value: k, label });
+  });
+
+  // 분위기
+moods.forEach((k) => {
+  const label = MOOD_OPTIONS.find((o) => o.key === k)?.label ?? k;
+  chips.push({ group: "분위기", value: k, label });
+});
+
+// 편의 조건
+musts.forEach((k) => {
+  const label = MUST_OPTIONS.find((o) => o.key === k)?.label ?? k;
+  chips.push({ group: "편의 조건", value: k, label });
+});
 
   // 디저트
   desserts.forEach((d) => {
@@ -499,27 +727,39 @@ const summaryChips = useMemo(() => {
   });
 
   return chips;
-}, [regions, themes, desserts]);
+}, [regions, themes, purposes, desserts]);
 
 const removeSummaryChip = (chip) => {
   const nextRegions =
     chip.group === "지역" ? regions.filter((v) => v !== chip.value) : regions;
   const nextThemes =
     chip.group === "테마" ? themes.filter((v) => v !== chip.value) : themes;
-  const nextDesserts =
+   const nextPurposes =
+    chip.group === "방문 목적" ? purposes.filter((v) => v !== chip.value) : purposes;
+    const nextDesserts =
     chip.group === "디저트" ? desserts.filter((v) => v !== chip.value) : desserts;
-
-  // 1) UI 상태 즉시 반영
+   const nextMoods =
+    chip.group === "분위기" ? moods.filter((v) => v !== chip.value) : moods;
+    const nextMusts =
+   chip.group === "편의 조건" ? musts.filter((v) => v !== chip.value) : musts;
+  
+   // 1) UI 상태 즉시 반영
   setRegions(nextRegions);
   setThemes(nextThemes);
+  setPurposes(nextPurposes); 
   setDesserts(nextDesserts);
+  setMoods(nextMoods);
+  setMusts(nextMusts);
 
   // 2) URL도 같이 갱신해서 "검색 결과"가 바로 바뀌게
   pushParams({
     page: 1,
     regions: nextRegions,
     themes: nextThemes,
+    purposes: nextPurposes,
     desserts: nextDesserts,
+    moods: nextMoods,
+    musts: nextMusts,
   });
 };
 
@@ -531,13 +771,12 @@ const removeSummaryChip = (chip) => {
   const toggleDessert = (name) => {
     setDesserts((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]));
   };
-  
-// ✅ Sidebar처럼 "선택된 필터" 표시용 라벨
-const regionLabel = (value) =>
-  REGION_OPTIONS.find((o) => o.value === value)?.label ?? value;
 
-const themeLabel = (key) =>
-  THEME_OPTIONS.find((o) => o.key === key)?.label ?? key;
+  const togglePurpose = (key) => {
+  setPurposes((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
+};
+  
+
 
 // ✅ 선택 여부
 const hasSelection = regions.length + themes.length + desserts.length > 0;
@@ -601,18 +840,15 @@ const resetFilters = () => {
   // 4) URL 파라미터를 싹 비움 -> spKey="" -> useEffect([spKey])가 돌면서
   //    /api/cafes 로 호출되고 "전체 결과"로 results가 다시 채워짐
   setSp(new URLSearchParams(), { replace: true });
+  setPurposes([]);
 };
 
 
 
-  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
-  const startPage = Math.floor((page - 1) / 10) * 10 + 1;
-const endPage = Math.min(startPage + 9, totalPages);
 
-  const pagedResults = useMemo(() => {
-  const start = (page - 1) * PAGE_SIZE;
-  return results.slice(start, start + PAGE_SIZE);
-  }, [results, page]);
+
+ 
+  
 
   const goPage = (p) => {
   const next = Math.min(Math.max(1, p), totalPages);
@@ -760,6 +996,68 @@ const endPage = Math.min(startPage + 9, totalPages);
         </div>
       </div>
 
+      {/* ✅ 방문 목적(새로 추가) */}
+<div className="filter-group">
+  <div className="filter-group-title">
+    <div className="text">방문 목적</div>
+  </div>
+
+  <div className="filter-options-container">
+    {PURPOSE_OPTIONS.map((p) => (
+      <ChipButton
+        key={p.key}
+        selected={purposes.includes(p.key)}
+        onClick={() => togglePurpose(p.key)}
+      >
+        {p.label}
+      </ChipButton>
+    ))}
+  </div>
+</div>
+
+<div className="filter-group">
+  <div className="filter-group-title">
+    <div className="text">분위기</div>
+  </div>
+
+  <div className="filter-options-container">
+    {MOOD_OPTIONS.map((m) => (
+      <ChipButton
+        key={m.key}
+        selected={moods.includes(m.key)}
+        onClick={() =>
+          setMoods((prev) => (prev.includes(m.key) ? prev.filter((x) => x !== m.key) : [...prev, m.key]))
+        }
+      >
+        {m.label}
+      </ChipButton>
+    ))}
+  </div>
+</div>
+
+
+<div className="filter-group">
+  <div className="filter-group-title">
+    <div className="text">편의 조건(필수)</div>
+  </div>
+
+  <div className="filter-options-container">
+    {MUST_OPTIONS.map((m) => (
+      <ChipButton
+        key={m.key}
+        selected={musts.includes(m.key)}
+        onClick={() =>
+          setMusts((prev) => (prev.includes(m.key) ? prev.filter((x) => x !== m.key) : [...prev, m.key]))
+        }
+      >
+        {m.label}
+      </ChipButton>
+    ))}
+  </div>
+</div>
+
+
+
       {/* ✅ 5) 디저트(기존 버튼이 이미 칩이라 Sidebar 클래스만 적용) */}
       <div className="filter-group">
         <div className="filter-group-title">
@@ -785,7 +1083,7 @@ const endPage = Math.min(startPage + 9, totalPages);
       <button
         type="button"
         className="sidebar-search-btn"
-        onClick={() => pushParams({ page: 1 })}
+        onClick={applySearch}
         title="선택한 필터로 검색"
       >
         <span className="icon">🔍</span>
@@ -803,7 +1101,7 @@ const endPage = Math.min(startPage + 9, totalPages);
                 <div key={n} className="skeleton-card" />
               ))}
             </div>
-          ) : results.length === 0 ? (
+          ) : filteredResults.length === 0 ? (
             <div className="empty">
               <div className="empty-title">결과가 없습니다</div>
               <div className="empty-sub">키워드를 줄이거나, 지역/필터를 풀어보세요.</div>
