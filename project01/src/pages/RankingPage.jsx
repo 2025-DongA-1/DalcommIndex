@@ -1,19 +1,98 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import Header from "../components/Header"; // ← (폴더 위치에 따라 경로만 조정)
-import "../styles/RankingPage.css"; // ✅ 랭킹 페이지 전용 CSS (파일 위치에 맞게 경로 조정)
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import Header from "../components/Header"; // 경로 유지
+import "../styles/RankingPage.css";
 
 /**
  * RankingPage (Consumer + Creator)
- * - Consumer: 트렌딩 디저트 / 핫한 동네 / 카페 추천 리스트
- * - Creator: 창업자 인사이트 (메뉴 트렌드 / 상권 기회 / 고객 니즈 / 포지셔닝)
+ * - Consumer: 인기 메뉴 TOP / 핫한 거리 TOP
+ * - Creator: 창업자 인사이트 (메뉴 트렌드 / 메뉴 조합 / 목적 / 분위기 / 맛)
  *
  * NOTE
- * - 백엔드 연결 전에는 Mock 데이터로 동작합니다.
- * - 백엔드가 준비되면 /api/cafes 로 fetch 하도록 되어 있습니다. (region/sort는 프론트에서 처리)
+ * - Creator는 /api/creator/insights 를 직접 조회합니다.
+ * - 프로젝트 단계에서는 시간축(최근성) 기반 트렌드가 아니라 “현재 수집된 리뷰 텍스트” 기반 집계입니다.
  */
 
-function buildMenuTrendFromCafes(items = [], catMap, limit = null) {
+// ---------------------------
+// Helpers
+// ---------------------------
+
+const MENU_CAT_LABEL = { dessert: "디저트", drink: "음료", meal: "식사" };
+const MENU_CAT_TONE = { dessert: "good", drink: "info", meal: "muted" };
+
+const ACTION_BTN_STYLE = {
+  padding: "6px 10px",
+  fontSize: 12,
+  whiteSpace: "nowrap",
+  width: "auto",
+  minWidth: "max-content",
+  flexShrink: 0,
+  wordBreak: "keep-all",
+  lineHeight: 1.1,
+};
+
+const TAG_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  whiteSpace: "nowrap",
+  wordBreak: "keep-all",
+  lineHeight: 1.0,
+  flexShrink: 0,
+  minWidth: "max-content",
+};
+
+
+function menuCatLabel(cat) {
+  return MENU_CAT_LABEL[cat] || "기타";
+}
+
+function menuCatTone(cat) {
+  return MENU_CAT_TONE[cat] || "muted";
+}
+
+function safeArr(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function safeNum(v, def = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+}
+
+function abbreviateAreaName(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+
+  // 흔한 행정구역 표기를 짧게 표시(표시만 축약, 데이터 키는 원본 유지)
+  const reps = [
+    ["광주광역시", "광주"],
+    ["부산광역시", "부산"],
+    ["대구광역시", "대구"],
+    ["대전광역시", "대전"],
+    ["인천광역시", "인천"],
+    ["울산광역시", "울산"],
+    ["서울특별시", "서울"],
+    ["세종특별자치시", "세종"],
+    ["경기도", "경기"],
+    ["강원특별자치도", "강원"],
+    ["강원도", "강원"],
+    ["충청북도", "충북"],
+    ["충청남도", "충남"],
+    ["전라북도", "전북"],
+    ["전라남도", "전남"],
+    ["경상북도", "경북"],
+    ["경상남도", "경남"],
+    ["제주특별자치도", "제주"],
+    ["제주도", "제주"],
+  ];
+
+  let out = s;
+    for (const [a, b] of reps) out = out.replace(a, b);
+  return out;
+}
+
+function buildMenuTrendFromCafes(items = [], catMap) {
   const safe = Array.isArray(items) ? items : [];
   const count = new Map();
 
@@ -31,29 +110,17 @@ function buildMenuTrendFromCafes(items = [], catMap, limit = null) {
     for (const d of uniq) count.set(d, (count.get(d) ?? 0) + 1);
   }
 
-  const arr = [...count.entries()]
-    .sort((a, b) => b[1] - a[1])
+  return [...count.entries()]
+    .sort((a, b) => {
+      const d = (b[1] ?? 0) - (a[1] ?? 0);
+      if (d) return d;
+      return String(a[0]).localeCompare(String(b[0]), "ko");
+    })
     .map(([name, mentions]) => ({
       name,
       category: getCat(name),
-      delta: 0,
       mentions,
-      prevMentions: mentions,
     }));
-
-  if (typeof limit === "number" && Number.isFinite(limit)) return arr.slice(0, Math.max(0, limit));
-  return arr;
-}
-
-const MENU_CAT_LABEL = { dessert: "디저트", drink: "음료", meal: "식사" };
-const MENU_CAT_TONE = { dessert: "good", drink: "info", meal: "muted" };
-
-function menuCatLabel(cat) {
-  return MENU_CAT_LABEL[cat] || "기타";
-}
-
-function menuCatTone(cat) {
-  return MENU_CAT_TONE[cat] || "muted";
 }
 
 function buildHotAreasFromCafes(items = [], catMap) {
@@ -68,7 +135,8 @@ function buildHotAreasFromCafes(items = [], catMap) {
   };
 
   // areaKey(도로명) -> stats
-  const areaMap = new Map(); // key -> { cafeCount, reviewSumCap10, full10Count, menuSet, menuCafeCount }
+  const areaMap = new Map();
+
   for (const c of safe) {
     const area =
       c.road_area_key ||
@@ -97,7 +165,6 @@ function buildHotAreasFromCafes(items = [], catMap) {
     cur.reviewSumCap10 += cap;
     if (cap >= 10) cur.full10Count += 1;
 
-    // 메뉴 다양성/상위메뉴: 카페당 중복 제거 후 카페수 카운트
     const menus = Array.isArray(c.desserts) ? c.desserts.filter(Boolean) : [];
     const uniqMenus = [...new Set(menus)];
     for (const m of uniqMenus) {
@@ -115,10 +182,7 @@ function buildHotAreasFromCafes(items = [], catMap) {
     menuCafeCount: v.menuCafeCount,
   }));
 
-  // 표본이 너무 적은 거리(카페 1개 등)가 상위권을 먹는 현상 방지:
-  // - 기본은 카페 3개 이상만 랭킹 후보
-  // - 후보가 10개 미만이면 2개 이상으로 완화
-  // - 그래도 부족하면 전체 사용
+  // 표본이 너무 적은 거리(카페 1개 등)가 상위권을 먹는 현상 방지
   const MIN_CAFES_PRIMARY = 3;
   const MIN_CAFES_FALLBACK = 2;
 
@@ -136,14 +200,10 @@ function buildHotAreasFromCafes(items = [], catMap) {
     const variety = Math.log(1 + a.menuCount) / Math.log(1 + maxMenuCount); // 0~1
     const scale = Math.log(1 + cafeCount) / Math.log(1 + maxCafeCount); // 0~1
 
-    // 표본 안정도: 카페 수가 적을수록(특히 1~2개) 품질 지표의 영향력을 강하게 줄임
-    // 1개: 0.25, 2개: 0.40, 3개: 0.50, 5개: 0.625 ...
     const stability = cafeCount / (cafeCount + 3);
 
-    // (핵심) 카페수 비중을 가장 크게:
-    // - scale(카페 수 스케일) 65%
-    // - 품질(인기/밀도/다양성) 35% * 표본보정(stability)
-    const quality = 0.45 * full10Ratio + 0.35 * density + 0.20 * variety; // 0~1
+    // 카페수 비중 높게
+    const quality = 0.45 * full10Ratio + 0.35 * density + 0.20 * variety;
     const score = 0.65 * scale + 0.35 * stability * quality;
     return { score, full10Ratio, density, variety, scale, stability };
   };
@@ -154,19 +214,21 @@ function buildHotAreasFromCafes(items = [], catMap) {
     const cafeCount = a.cafeCount;
     const avg = cafeCount ? a.reviewSumCap10 / cafeCount : 0;
 
-    // 상위 메뉴 TOP3
     const topMenus = [...a.menuCafeCount.entries()]
       .sort((x, y) => y[1] - x[1])
       .slice(0, 3)
-      .map(([name, mentions]) => ({
-        name,
-        mentions,
-        cat: getCat(name),
-        label: menuCatLabel(getCat(name)),
-      }));
+      .map(([name, mentions]) => {
+        const cat = getCat(name);
+        return {
+          name,
+          mentions,
+          cat,
+          label: menuCatLabel(cat),
+        };
+      });
 
-    const score100 = Math.round(s.score * 1000) / 10; // 0.1 단위
-    const meta = `점수 ${score100} · 카페 ${cafeCount} · 평균 ${avg.toFixed(1)}/10 · 메뉴 ${a.menuCount}종`;
+    const score100 = Math.round(s.score * 1000) / 10;
+    const meta = `카페 ${cafeCount}곳 · 평균 ${avg.toFixed(1)}/10 · 메뉴 ${a.menuCount}종`;
 
     return {
       name: a.name,
@@ -189,7 +251,6 @@ function buildHotAreasFromCafes(items = [], catMap) {
     };
   });
 
-  // 종합 점수 순(동점이면 카페수 -> 가나다)
   enriched.sort((a, b) => {
     const d1 = (b.score100 ?? 0) - (a.score100 ?? 0);
     if (d1) return d1;
@@ -201,65 +262,78 @@ function buildHotAreasFromCafes(items = [], catMap) {
   return enriched;
 }
 
-
-// ---------------------------
-// Mock (백엔드 붙기 전 동작용)
-// ---------------------------
-const DESSERT_TREND = [
-  { name: "크로플", delta: 12, mentions: 340, prevMentions: 304 },
-  { name: "소금빵", delta: 9, mentions: 280, prevMentions: 257 },
-  { name: "말차", delta: 7, mentions: 210, prevMentions: 196 },
-  { name: "딸기 케이크", delta: 6, mentions: 180, prevMentions: 170 },
-  { name: "휘낭시에", delta: 5, mentions: 150, prevMentions: 143 },
-];
-
-const HOT_AREAS = [
-  { name: "동명동", meta: "감성/신상 카페", demand: 820, supply: 140, opportunity: 72 },
-  { name: "상무지구", meta: "작업/모임", demand: 760, supply: 160, opportunity: 61 },
-  { name: "첨단", meta: "대형 베이커리", demand: 690, supply: 150, opportunity: 58 },
-  { name: "양림동", meta: "산책/분위기", demand: 610, supply: 105, opportunity: 66 },
-  { name: "담양", meta: "드라이브/뷰", demand: 720, supply: 120, opportunity: 74 },
-];
-
-
-const CREATOR_MOCK = {
-  // 언급량 급증 메뉴
-  menuTrends: [
-    { name: "소금빵", delta: 9, mentions: 280 },
-    { name: "말차", delta: 7, mentions: 210 },
-    { name: "크로플", delta: 12, mentions: 340 },
-  ],
-  // 수요(언급/리뷰) 대비 공급(경쟁) 갭이 큰 지역
-  opportunityAreas: [
-    { name: "담양", opportunity: 74, demand: 720, supply: 120 },
-    { name: "동명동", opportunity: 72, demand: 820, supply: 140 },
-    { name: "양림동", opportunity: 66, demand: 610, supply: 105 },
-  ],
-  // 고객이 좋아하는(니즈) 요소
-  needsTop: [
-    { name: "주차", mentions: 420 },
-    { name: "조용", mentions: 380 },
-    { name: "좌석", mentions: 350 },
-    { name: "넓다", mentions: 310 },
-  ],
-};
-
 // ---------------------------
 // UI Components
 // ---------------------------
-function Drawer({ open, title, onClose, children }) {
-  return (
-    <div className={`rkpg-overlay ${open ? "is-open" : ""}`} onMouseDown={onClose}>
-      <aside className="rkpg-drawer" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="rkpg-drawer-header">
+
+function Drawer({ open, title, onClose, children, bodyRef }) {
+  // Render drawer in a portal to avoid being clipped by any parent layout/overflow/transform.
+  // Also lock body scroll while open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  if (!open) return null;
+  if (typeof document === "undefined") return null;
+
+  const overlayStyle = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.35)",
+    zIndex: 9999,
+    display: "flex",
+    justifyContent: "flex-end",
+  };
+
+  const drawerStyle = {
+    position: "fixed",
+    top: 0,
+    right: 0,
+    height: "100dvh",
+    width: "min(560px, 94vw)",
+    background: "#fff",
+    boxShadow: "-6px 0 28px rgba(0,0,0,0.18)",
+    borderRadius: "16px 0 0 16px",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  };
+
+  const headerStyle = {
+    padding: "14px 16px",
+    borderBottom: "1px solid rgba(0,0,0,0.08)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    flex: "0 0 auto",
+  };
+
+  const bodyStyle = {
+    padding: "14px 16px",
+    overflow: "auto",
+    flex: "1 1 auto",
+    minHeight: 0,
+  };
+
+  return createPortal(
+    <div style={overlayStyle} onMouseDown={onClose}>
+      <aside style={drawerStyle} onMouseDown={(e) => e.stopPropagation()}>
+        <div style={headerStyle}>
           <div className="rkpg-drawer-title">{title}</div>
           <button className="rkpg-x" onClick={onClose} aria-label="닫기">
             ✕
           </button>
         </div>
-        <div className="rkpg-drawer-body">{children}</div>
+        <div style={bodyStyle} ref={bodyRef}>{children}</div>
       </aside>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -283,210 +357,69 @@ function Progress({ label, value, max }) {
   );
 }
 
-function buildCreatorInsights(items = []) {
-  const safe = Array.isArray(items) ? items : [];
-
-  const inc = (map, key, by = 1) => {
-    if (!key) return;
-    map.set(key, (map.get(key) ?? 0) + by);
-  };
-
-  const dessertCount = new Map();   // 디저트 키워드 빈도
-  const whyCount = new Map();       // 니즈(why) 키워드 빈도
-  const areaMap = new Map();        // 상권(동네)별 수요/공급
-  const areaDessertMap = new Map(); // 상권(동네)별 디저트 포함 카페 수(포지셔닝)
-
-  for (const c of safe) {
-    const neighborhood = c._regionText || c.neighborhood || c.region || "기타";
-
-    // 상권별 수요/공급
-    const supply = 1;
-    const demand = Number(c.reviewCount ?? 0);
-    const prev = areaMap.get(neighborhood) ?? { supply: 0, demand: 0 };
-    areaMap.set(neighborhood, {
-      supply: prev.supply + supply,
-      demand: prev.demand + demand,
-    });
-
-    // 메뉴 트렌드(디저트) + 상권별 대표 디저트(포지셔닝)
-    if (Array.isArray(c.desserts)) {
-      const uniqDesserts = [...new Set(c.desserts)];
-      for (const d of uniqDesserts) {
-        inc(dessertCount, d);
-
-        let dm = areaDessertMap.get(neighborhood);
-        if (!dm) {
-          dm = new Map();
-          areaDessertMap.set(neighborhood, dm);
-        }
-        inc(dm, d);
-      }
-    }
-
-    // 니즈(why)
-    if (Array.isArray(c.why)) {
-      const uniqWhy = [...new Set(c.why)];
-      for (const w of uniqWhy) inc(whyCount, w);
-    }
-  }
-
-  // 메뉴 트렌드 TOP
-  const menuTrends = [...dessertCount.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([name, mentions]) => ({ name, mentions }));
-
-  // 고객 니즈 TOP
-  const needsTop = [...whyCount.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([name, mentions]) => ({ name, mentions }));
-
-  // 상권 기회지수 TOP (수요/공급 비율을 0~100으로 정규화)
-  const areaArr = [...areaMap.entries()].map(([name, v]) => {
-    const ratio = v.supply > 0 ? v.demand / v.supply : 0;
-    return { name, demand: v.demand, supply: v.supply, ratio };
-  });
-
-  let opportunityAreas = [];
-  if (areaArr.length > 0) {
-    const ratios = areaArr.map((x) => x.ratio);
-    const min = Math.min(...ratios);
-    const max = Math.max(...ratios);
-    const norm = (r) => {
-      if (max === min) return 50;
-      return Math.round(((r - min) / (max - min)) * 100);
-    };
-
-    opportunityAreas = areaArr
-      .sort((a, b) => b.ratio - a.ratio)
-      .slice(0, 10)
-      .map((a) => ({
-        name: a.name,
-        demand: a.demand,
-        supply: a.supply,
-        opportunity: norm(a.ratio),
-      }));
-  }
-
-  
-// 상권별 특화 메뉴 TOP (포지셔닝)
-// - 케이크 같은 '전지역 공통 1등'은 변별력이 낮아서 제외
-// - 전체 대비 해당 상권에서 얼마나 더 자주 포함되는지(lift)로 뽑습니다.
-const stopDesserts = new Set(["케이크"]);
-const totalCafes = safe.length || 1;
-
-const globalShare = new Map();
-for (const [d, cnt] of dessertCount.entries()) {
-  globalShare.set(d, cnt / totalCafes);
-}
-
-const dessertHotspots = [...areaDessertMap.entries()]
-  .map(([area, dm]) => {
-    const total = areaMap.get(area)?.supply ?? 0;
-    if (total <= 0) return null;
-
-    let best = null;
-
-    for (const [dessert, cafes] of dm.entries()) {
-      if (stopDesserts.has(dessert)) continue;
-      if (cafes < 5) continue; // 표본 최소치
-      const pArea = cafes / total;
-      const pAll = globalShare.get(dessert) ?? 0;
-      if (!pAll) continue;
-
-      const lift = pArea / pAll;
-
-      const cand = { area, dessert, cafes, total, share: Math.round(pArea * 100), lift: Math.round(lift * 10) / 10 };
-      if (!best) best = cand;
-      else if (cand.lift > best.lift) best = cand;
-      else if (cand.lift === best.lift && cand.cafes > best.cafes) best = cand;
-    }
-
-    return best;
-  })
-  .filter(Boolean)
-  .sort((a, b) => b.lift - a.lift || b.share - a.share || b.cafes - a.cafes)
-  .slice(0, 10);
-
-return { menuTrends, opportunityAreas, needsTop, dessertHotspots };
-}
-
-
 // ---------------------------
-// Main Page
+// Page
 // ---------------------------
+
 export default function RankingPage() {
-  const navigate = useNavigate();
-
   // consumer | creator
   const [mode, setMode] = useState("consumer");
-  // 메뉴 TOP 필터 (all | drink | dessert_meal | dessert | meal)
+
+  // Consumer 메뉴 TOP 필터 (all | drink | dessert_meal)
   const [menuView, setMenuView] = useState("all");
   const [menuShowCount, setMenuShowCount] = useState(10);
   const [hotShowCount, setHotShowCount] = useState(10);
+
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState("");
   const [drawerCtx, setDrawerCtx] = useState({ type: "", key: "" });
 
-  // 서버 데이터(있으면 우선), 없으면 Mock 유지
-  const [serverUpdatedAt, setServerUpdatedAt] = useState("");
-  const [dessertTrend, setDessertTrend] = useState(DESSERT_TREND);
-  const menuViewCats = useMemo(() => {
-    if (menuView === "drink") return ["drink"];
-    if (menuView === "dessert") return ["dessert"];
-    if (menuView === "meal") return ["meal"];
-    if (menuView === "dessert_meal") return ["dessert", "meal"];
-    return ["dessert", "drink", "meal"];
-  }, [menuView]);
+  // Drawer 내부 스크롤 제어(포탈 바디 기준)
+  const drawerBodyRef = useRef(null);
 
-  const menuViewHint = useMemo(() => {
-    if (menuView === "drink") return "음료 기준";
-    if (menuView === "dessert") return "디저트 기준";
-    if (menuView === "meal") return "식사 기준";
-    if (menuView === "dessert_meal") return "디저트+식사 기준";
-    return "디저트·음료·식사 통합 기준";
-  }, [menuView]);
+  // Drawer(전체 메뉴) 상태
+  const [menuAllFilter, setMenuAllFilter] = useState("all"); // all|dessert|drink|meal|other
+  const [menuAllSort, setMenuAllSort] = useState("pop"); // pop|alpha
 
-  const onChangeMenuView = useCallback((v) => {
-    setMenuView(v);
-    setMenuShowCount(10);
-  }, []);
-
-  const menuRankAll = useMemo(() => {
-    const src = Array.isArray(dessertTrend) ? dessertTrend : [];
-    const cats = new Set(menuViewCats);
-    return src.filter((it) => cats.has((it?.category || "dessert")));
-  }, [dessertTrend, menuViewCats]);
-
-  const menuVisible = useMemo(() => {
-    const n = Math.max(0, Math.min(Number(menuShowCount) || 0, menuRankAll.length));
-    return menuRankAll.slice(0, n);
-  }, [menuRankAll, menuShowCount]);
-
-  const [hotAreas, setHotAreas] = useState(HOT_AREAS);
-  const hotVisible = useMemo(() => {
-    const src = Array.isArray(hotAreas) ? hotAreas : [];
-    const n = Math.max(0, Math.min(Number(hotShowCount) || 0, src.length));
-    return src.slice(0, n);
-  }, [hotAreas, hotShowCount]);
-
-  const [creator, setCreator] = useState(CREATOR_MOCK);
-
-  // ✅ 백엔드 연결 확인용 (/api/status, /api/cafes)
-  const [bootLoading, setBootLoading] = useState(false);
-  const [bootError, setBootError] = useState("");
-  const [apiStatus, setApiStatus] = useState(null);
-  const [apiCafes, setApiCafes] = useState([]);
-  const [kwDict, setKwDict] = useState([]);
 
   const openInsight = useCallback((title, ctx) => {
+    const t = String(ctx?.type || "");
+
+    // Drawer별로 내부 상태 초기화
+    if (t === "menuAll") {
+      setMenuAllFilter("all");
+      setMenuAllSort("pop");
+    }
+
     setDrawerTitle(title);
     setDrawerCtx(ctx);
     setDrawerOpen(true);
   }, []);
 
+  // 서버 데이터(Consumer)
+  const [serverUpdatedAt, setServerUpdatedAt] = useState("");
+  const [dessertTrend, setDessertTrend] = useState([]);
+  const [hotAreas, setHotAreas] = useState([]);
+
+  const [bootLoading, setBootLoading] = useState(false);
+  const [bootError, setBootError] = useState("");
+  const [apiCafes, setApiCafes] = useState([]);
+  const [kwDict, setKwDict] = useState([]);
+
+  // Creator 데이터
+  const [creatorLoading, setCreatorLoading] = useState(false);
+  const [creatorError, setCreatorError] = useState("");
+  const [creatorData, setCreatorData] = useState({
+    menus: [],
+    pairs: [],
+    purpose: [],
+    atmosphere: [],
+    taste: [],
+    meta: null,
+  });
+
+  // keyword_dict -> category map (menus pill)
   const menuCatMap = useMemo(() => {
     const m = new Map();
     const arr = Array.isArray(kwDict) ? kwDict : [];
@@ -498,12 +431,14 @@ export default function RankingPage() {
     return m;
   }, [kwDict]);
 
+  // Consumer: 전체 메뉴 목록(카페에서 실제 나온 메뉴)
   const allMenus = useMemo(() => {
     const safe = Array.isArray(apiCafes) ? apiCafes : [];
     const all = [];
     for (const c of safe) {
       if (Array.isArray(c.desserts)) all.push(...c.desserts.filter(Boolean));
     }
+
     const uniq = [...new Set(all)];
     const order = { dessert: 0, drink: 1, meal: 2 };
     uniq.sort((a, b) => {
@@ -514,6 +449,7 @@ export default function RankingPage() {
       if (oa !== ob) return oa - ob;
       return String(a).localeCompare(String(b), "ko");
     });
+
     return uniq;
   }, [apiCafes, menuCatMap]);
 
@@ -546,7 +482,67 @@ export default function RankingPage() {
     return cnt;
   }, [allMenus, menuCatMap]);
 
-  // ✅ 단일 진실 소스: /api/cafes 한 번만 불러오고 region/sort는 프론트에서 처리
+  // 메뉴별 언급 카페 수(map) — Drawer 정렬 등에 사용
+  const menuMentionsMap = useMemo(() => {
+    const m = new Map();
+    const src = Array.isArray(dessertTrend) ? dessertTrend : [];
+    for (const it of src) {
+      const k = String(it?.name ?? "").trim();
+      if (!k) continue;
+      m.set(k, safeNum(it?.mentions));
+    }
+    return m;
+  }, [dessertTrend]);
+
+
+  // Consumer: 메뉴 TOP 필터
+  const menuViewCats = useMemo(() => {
+    if (menuView === "drink") return ["drink"];
+    if (menuView === "dessert_meal") return ["dessert", "meal"];
+    return ["dessert", "drink", "meal"]; // all
+  }, [menuView]);
+
+  const menuViewHint = useMemo(() => {
+    if (menuView === "drink") return "음료 기준";
+    if (menuView === "dessert_meal") return "디저트+식사 기준";
+    return "디저트·음료·식사 통합 기준";
+  }, [menuView]);
+
+  const onChangeMenuView = useCallback((v) => {
+    setMenuView(v);
+    setMenuShowCount(10);
+  }, []);
+
+  // Drawer(전체 메뉴)에서 필터/정렬 변경 시 상단으로 이동
+  useEffect(() => {
+    if (!drawerOpen) return;
+    if (drawerCtx?.type !== "menuAll") return;
+    try {
+      drawerBodyRef.current?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    } catch {
+      // ignore
+    }
+  }, [drawerOpen, drawerCtx?.type, menuAllFilter, menuAllSort]);
+
+
+  const menuRankAll = useMemo(() => {
+    const src = Array.isArray(dessertTrend) ? dessertTrend : [];
+    const cats = new Set(menuViewCats);
+    return src.filter((it) => cats.has((it?.category || "dessert")));
+  }, [dessertTrend, menuViewCats]);
+
+  const menuVisible = useMemo(() => {
+    const n = Math.max(0, Math.min(Number(menuShowCount) || 0, menuRankAll.length));
+    return menuRankAll.slice(0, n);
+  }, [menuRankAll, menuShowCount]);
+
+  const hotVisible = useMemo(() => {
+    const src = Array.isArray(hotAreas) ? hotAreas : [];
+    const n = Math.max(0, Math.min(Number(hotShowCount) || 0, src.length));
+    return src.slice(0, n);
+  }, [hotAreas, hotShowCount]);
+
+  // ✅ Consumer 데이터 로드: /api/cafes + /api/keywords
   useEffect(() => {
     let alive = true;
 
@@ -567,17 +563,16 @@ export default function RankingPage() {
           Array.isArray(cJson?.rows) ? cJson.rows : [];
 
         if (!alive) return;
-
         setApiCafes(list);
 
-        // ✅ keyword_dict(메뉴 사전)도 같이 불러와서 카테고리 라벨에 사용
+        // keyword_dict(메뉴 사전) 로드
         let kwItems = [];
         try {
           const kRes = await fetch("/api/keywords?limit=2000");
           if (kRes.ok) {
             const kJson = await kRes.json();
             kwItems = Array.isArray(kJson) ? kJson : Array.isArray(kJson?.items) ? kJson.items : [];
-            setKwDict(kwItems);
+            if (alive) setKwDict(kwItems);
           }
         } catch {
           // ignore
@@ -590,24 +585,20 @@ export default function RankingPage() {
           if (k) catMap.set(k, c);
         }
 
-        // 소비자/창업자 인사이트를 DB(/api/cafes) 기반으로 갱신
-        setCreator(buildCreatorInsights(list));
         setDessertTrend(buildMenuTrendFromCafes(list, catMap));
         setHotAreas(buildHotAreasFromCafes(list, catMap));
 
-        // /api/status는 있으면 표시, 없어도 동작하게(옵션)
+        // /api/status (옵션)
         fetch("/api/status")
           .then((r) => (r.ok ? r.json() : null))
           .then((sJson) => {
             if (!alive) return;
-            setApiStatus(sJson);
             if (sJson?.updatedAt) setServerUpdatedAt(sJson.updatedAt);
           })
           .catch(() => {
             /* ignore */
           });
       } catch (e) {
-        // API가 없거나 실패하면 Mock 유지
         if (!alive) return;
         setBootError(e?.message ?? String(e));
       } finally {
@@ -621,111 +612,83 @@ export default function RankingPage() {
     };
   }, []);
 
-  // Creator: 카드 내용 구성
-  const creatorCards = useMemo(() => {
-    const topMenu = (creator?.menuTrends ?? []).slice(0, 3);
-    const topOpp = (creator?.opportunityAreas ?? []).slice(0, 3);
-    const topNeeds = (creator?.needsTop ?? []).slice(0, 4);
-    const topHotspots = (creator?.dessertHotspots ?? []).slice(0, 4);
+  // ✅ Creator 데이터 로드: /api/creator/insights
+  useEffect(() => {
+    let alive = true;
 
-    const safeHotspotRows = topHotspots.length
-      ? topHotspots.map((h) => ({
-          left: h.area,
-          right: `${h.dessert} · ${h.share}% (${Number(h.cafes).toLocaleString()}곳) · ${h.lift}배`,
-        }))
-      : [{ left: "특화 메뉴 없음", right: "케이크 제외/표본(5곳) 기준" }];
+    const run = async () => {
+      setCreatorLoading(true);
+      setCreatorError("");
 
-    return [
-      {
-        id: "menu",
-        title: "메뉴 트렌드",
-        tone: "info",
-        pill: "메뉴",
-        desc: "언급량이 많은 메뉴 키워드 기준으로 메뉴/MD 우선순위를 정하세요.",
-        rows: topMenu.map((m) => ({ left: m.name, right: `언급 카페 ${Number(m.mentions).toLocaleString()}곳` })),
-        cta: "근거/액션",
-        ctx: { type: "creator", key: "menu" },
-      },
-      {
-        id: "opp",
-        title: "상권 기회지수 TOP",
-        tone: "info",
-        pill: "입지",
-        desc: "수요(언급/리뷰) 대비 공급(경쟁)이 낮은 지역은 ‘틈’이 생깁니다.",
-        rows: topOpp.map((a) => ({ left: a.name, right: `기회 ${a.opportunity}` })),
-        cta: "근거/액션",
-        ctx: { type: "creator", key: "opportunity" },
-      },
-      {
-        id: "needs",
-        title: "고객 니즈 TOP",
-        tone: "good",
-        pill: "니즈",
-        desc: "리뷰에서 자주 같이 언급되는 ‘만족 포인트’를 먼저 고정하세요.",
-        rows: topNeeds.map((k) => ({ left: k.name, right: `카페 ${Number(k.mentions).toLocaleString()}곳` })),
-        cta: "체크리스트",
-        ctx: { type: "creator", key: "needs" },
-      },
-      {
-        id: "hotspot",
-        title: "상권별 특화 메뉴 TOP",
-        tone: "info",
-        pill: "메뉴×입지",
-        desc: "케이크(공통 1등)를 제외하고, 전체 대비 상권에서 더 자주 나오는 ‘특화 메뉴’를 뽑았습니다.",
-        rows: safeHotspotRows,
-        cta: "근거/액션",
-        ctx: { type: "creator", key: "hotspot" },
-      },
-    ];
-  }, [creator]);
+      try {
+        const r = await fetch("/api/creator/insights?limit=50&pairsLimit=50");
+        if (!r.ok) throw new Error(`/api/creator/insights HTTP ${r.status}`);
+        const j = await r.json();
 
-  // Creator: KPI 타일
-  const creatorKpis = useMemo(() => {
-    const topOpp = (creator?.opportunityAreas ?? [])[0];
-    const topMenu = (creator?.menuTrends ?? [])[0];
-    const topNeed = (creator?.needsTop ?? [])[0];
-    const topHotspot = (creator?.dessertHotspots ?? [])[0];
+        if (!alive) return;
+        setCreatorData({
+          menus: safeArr(j?.menus),
+          pairs: safeArr(j?.pairs),
+          purpose: safeArr(j?.purpose),
+          atmosphere: safeArr(j?.atmosphere),
+          taste: safeArr(j?.taste),
+          meta: j?.meta ?? null,
+        });
+      } catch (e) {
+        if (!alive) return;
+        setCreatorError(e?.message ?? String(e));
+      } finally {
+        if (alive) setCreatorLoading(false);
+      }
+    };
 
-    return [
-      {
-        tone: "info",
-        label: "인기 메뉴 1순위",
-        value: topMenu ? `${topMenu.name} (언급 카페 ${Number(topMenu.mentions).toLocaleString()}곳)` : "-",
-        hint: "메뉴/콘텐츠 우선순위",
-        onClick: () => openInsight("메뉴 트렌드 근거/액션", { type: "creator", key: "menu" }),
-      },
-      {
-        tone: "info",
-        label: "기회 상권 1순위",
-        value: topOpp ? `${topOpp.name} (${topOpp.opportunity})` : "-",
-        hint: "수요-공급 갭",
-        onClick: () => openInsight("상권 기회지수 근거/액션", { type: "creator", key: "opportunity" }),
-      },
-      {
-        tone: "good",
-        label: "최상위 니즈",
-        value: topNeed ? `${topNeed.name} (${topNeed.mentions})` : "-",
-        hint: "고정 안내/공간 설계",
-        onClick: () => openInsight("고객 니즈 체크리스트", { type: "creator", key: "needs" }),
-      },
-      {
-        tone: "info",
-        label: "상권 대표 디저트",
-        value: topHotspot
-          ? `${topHotspot.area}: ${topHotspot.dessert} (${topHotspot.share}% · ${topHotspot.lift}배)`
-          : "-",
-        hint: "포지셔닝 힌트",
-        onClick: () => openInsight("상권별 특화 메뉴 근거/액션", { type: "creator", key: "hotspot" }),
-      },
-    ];
-  }, [creator, openInsight]);
+    run();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
+  // Drawer content
   const renderDrawerBody = useCallback(() => {
     const { type, key } = drawerCtx || {};
 
-    // ✅ Consumer/관리: 전체 메뉴(디저트·음료·식사) 보기
+    // ✅ Consumer: 전체 메뉴 보기
     if (type === "menuAll") {
-      const filtered = allMenus;
+      const catOrder = { dessert: 0, drink: 1, meal: 2, other: 9 };
+
+      const filterLabel =
+        menuAllFilter === "dessert" ? "디저트" :
+        menuAllFilter === "drink" ? "음료" :
+        menuAllFilter === "meal" ? "식사" :
+        menuAllFilter === "other" ? "기타" : "전체";
+
+      const items = allMenus.filter((name) => {
+        const cat = menuCatMap.get(name) || "";
+        if (menuAllFilter === "dessert") return cat === "dessert";
+        if (menuAllFilter === "drink") return cat === "drink";
+        if (menuAllFilter === "meal") return cat === "meal";
+        if (menuAllFilter === "other") return !["dessert", "drink", "meal"].includes(cat);
+        return true;
+      });
+
+      items.sort((a, b) => {
+        const ca = menuCatMap.get(a) || "";
+        const cb = menuCatMap.get(b) || "";
+        const oa = catOrder[ca] ?? 9;
+        const ob = catOrder[cb] ?? 9;
+
+        if (menuAllSort === "alpha") {
+          if (menuAllFilter === "all" && oa !== ob) return oa - ob;
+          return String(a).localeCompare(String(b), "ko");
+        }
+
+        const pa = menuMentionsMap.get(a) ?? 0;
+        const pb = menuMentionsMap.get(b) ?? 0;
+        const d = pb - pa;
+        if (d) return d;
+        if (menuAllFilter === "all" && oa !== ob) return oa - ob;
+        return String(a).localeCompare(String(b), "ko");
+      });
 
       return (
         <div className="rkpg-insight">
@@ -733,14 +696,29 @@ export default function RankingPage() {
             <div className="rkpg-row-between">
               <div>
                 <b>전체 메뉴 키워드</b>
-                <div className="rkpg-smallhint">
-                  현재 데이터 {allMenus.length}개 · 사전 {dictMenus.length}개
-                </div>
+                <div className="rkpg-smallhint">현재 데이터 {allMenus.length}개 · 사전 {dictMenus.length}개</div>
               </div>
-              <Pill tone="muted">전체</Pill>
+              <Pill tone="muted">{filterLabel}</Pill>
+            
+</div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10, alignItems: "center" }}>
+              <div className="rkpg-seg">
+                <button className={menuAllFilter === "all" ? "is-active" : ""} onClick={() => setMenuAllFilter("all")}>전체</button>
+                <button className={menuAllFilter === "dessert" ? "is-active" : ""} onClick={() => setMenuAllFilter("dessert")}>디저트</button>
+                <button className={menuAllFilter === "drink" ? "is-active" : ""} onClick={() => setMenuAllFilter("drink")}>음료</button>
+                <button className={menuAllFilter === "meal" ? "is-active" : ""} onClick={() => setMenuAllFilter("meal")}>식사</button>
+                <button className={menuAllFilter === "other" ? "is-active" : ""} onClick={() => setMenuAllFilter("other")}>기타</button>
+              </div>
+
+              <div className="rkpg-seg" style={{ marginLeft: "auto" }}>
+                <button className={menuAllSort === "pop" ? "is-active" : ""} onClick={() => setMenuAllSort("pop")}>인기도</button>
+                <button className={menuAllSort === "alpha" ? "is-active" : ""} onClick={() => setMenuAllSort("alpha")}>가나다</button>
+              </div>
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+
               <Pill tone="good">디저트 {menuCounts.dessert}</Pill>
               <Pill tone="info">음료 {menuCounts.drink}</Pill>
               <Pill tone="muted">식사 {menuCounts.meal}</Pill>
@@ -748,11 +726,14 @@ export default function RankingPage() {
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
-              {filtered.map((name) => {
+              {items.map((name) => {
                 const cat = menuCatMap.get(name) || "";
+                const mentions = menuMentionsMap.get(name) ?? 0;
                 return (
                   <div
                     key={name}
+                    className="rkpg-click"
+                    onClick={() => openInsight(`[${menuCatLabel(cat)}] ${name} 인사이트`, { type: "menu", key: name })}
                     style={{
                       display: "inline-flex",
                       alignItems: "center",
@@ -761,10 +742,12 @@ export default function RankingPage() {
                       border: "1px solid rgba(0,0,0,0.10)",
                       borderRadius: 12,
                       background: "rgba(0,0,0,0.02)",
+                      cursor: "pointer",
                     }}
                   >
                     <Pill tone={menuCatTone(cat)}>{menuCatLabel(cat)}</Pill>
                     <b>{name}</b>
+                    <span className="rkpg-muted" style={{ marginLeft: 6 }}>언급 {Number(mentions).toLocaleString()}</span>
                   </div>
                 );
               })}
@@ -772,9 +755,7 @@ export default function RankingPage() {
 
             {missingMenus.length ? (
               <details style={{ marginTop: 14 }}>
-                <summary style={{ cursor: "pointer" }}>
-                  사전에는 있으나 데이터에 아직 등장하지 않은 메뉴 {missingMenus.length}개
-                </summary>
+                <summary style={{ cursor: "pointer" }}>사전에는 있으나 데이터에 아직 등장하지 않은 메뉴 {missingMenus.length}개</summary>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
                   {missingMenus.map((name) => {
                     const cat = menuCatMap.get(name) || "";
@@ -803,8 +784,8 @@ export default function RankingPage() {
       );
     }
 
-    // Consumer: dessert
-    if (type === "dessert") {
+    // Consumer: menu item
+    if (type === "menu") {
       const item = dessertTrend.find((d) => d.name === key);
       const mentions = Number(item?.mentions ?? 0);
       const max = Math.max(1, ...dessertTrend.map((d) => Number(d.mentions ?? 0)));
@@ -816,18 +797,16 @@ export default function RankingPage() {
                 <b>근거</b>
                 <div className="rkpg-smallhint">카페 정보 기반 집계</div>
               </div>
-              <Pill tone="info">트렌딩</Pill>
+              <Pill tone="info">메뉴</Pill>
             </div>
             <Progress label="언급 카페 수" value={mentions} max={max} />
             <div className="rkpg-smallhint">※ 이번 프로젝트는 기간 데이터가 없어 증감률을 계산하지 않습니다.</div>
           </div>
-
         </div>
       );
     }
 
-    
-    // Consumer: area method (핫한 거리 산정 방식)
+    // Consumer: area method
     if (type === "areaMethod") {
       return (
         <div className="rkpg-insight">
@@ -835,27 +814,26 @@ export default function RankingPage() {
             <div className="rkpg-row-between">
               <div>
                 <b>핫한 거리 산정 방식</b>
-                <div className="rkpg-smallhint">크롤링 리뷰(카페당 최대 10개) 포착치 기반 · 시간축(최근성) 미사용</div>
+                <div className="rkpg-smallhint">크롤링 리뷰(카페당 최대 10개) 포착치 기반 · 시간축(최근성) 미사용 · 상권 분석/수요 예측 아님</div>
               </div>
               <Pill tone="muted">설명</Pill>
             </div>
 
             <div className="rkpg-insight-ul">
-              • <b>리뷰 포착치</b>: r = min(10, reviewCountExternal)<br/>
-              • <b>인기</b>: 10/10(꽉 찬) 카페 비율 = full10Count / cafeCount<br/>
-              • <b>밀도</b>: 카페당 평균 리뷰 포착치 = (Σ r / cafeCount) / 10<br/>
-              • <b>다양성</b>: 해당 거리의 유니크 메뉴 수(통합 메뉴 기준), log로 완만하게 반영<br/>
-              • <b>스케일</b>: 카페 수가 많은 거리의 안정도를 log로 반영<br/>
+              • <b>집계 대상</b>: 기본은 <b>카페 3곳 이상</b>인 거리만 후보(10개 미만이면 2곳 이상으로 완화, 그래도 부족하면 전체 사용)<br />
+              • <b>리뷰 포착치</b>: r = min(10, reviewCountExternal)<br />
+              • <b>인기</b>: 10/10(꽉 찬) 카페 비율 = full10Count / cafeCount<br />
+              • <b>밀도</b>: 카페당 평균 리뷰 포착치 = (Σ r / cafeCount) / 10<br />
+              • <b>다양성</b>: 해당 거리의 유니크 메뉴 수(통합 메뉴 기준), log로 완만하게 반영<br />
+              • <b>스케일</b>: 카페 수가 많은 거리의 안정도를 log로 반영<br />
               • <b>표본 안정도 보정</b>: 카페 수가 매우 적으면(1~3개) 과대평가를 줄이기 위해 stability 가중 적용
             </div>
 
             <div className="rkpg-insight-box" style={{ marginTop: 12 }}>
-              <div className="rkpg-smallhint">
-                최종 점수(0~100)는 아래 구성 요소를 합산 후 안정도 보정을 적용합니다.
-              </div>
+              <div className="rkpg-smallhint">최종 점수(0~100)는 아래 구성 요소를 합산 후 안정도 보정을 적용합니다.</div>
               <div className="rkpg-insight-ul" style={{ marginTop: 8 }}>
-                • base = 0.30×인기 + 0.20×밀도 + 0.30×다양성 + 0.20×스케일<br/>
-                • score = base × (0.65 + 0.35×stability)<br/>
+                • quality = 0.45×인기 + 0.35×밀도 + 0.20×다양성<br />
+                • score = 0.65×스케일 + 0.35×stability×quality<br />
                 • score100 = score × 100
               </div>
             </div>
@@ -864,11 +842,53 @@ export default function RankingPage() {
       );
     }
 
-// Consumer: area
+
+
+    // Consumer: 전체 거리 보기
+    if (type === "areaAll") {
+      const items = Array.isArray(hotAreas) ? hotAreas : [];
+
+      return (
+        <div className="rkpg-insight">
+          <div className="rkpg-insight-box">
+            <div className="rkpg-row-between">
+              <div>
+                <b>핫한 거리 전체</b>
+                <div className="rkpg-smallhint">카페 3곳 이상 거리 우선(부족 시 완화) · 목록에서는 점수를 숨기고 근거만 표시합니다.</div>
+              </div>
+              <Pill tone="muted">전체</Pill>
+            </div>
+
+            {items.length ? (
+              <ul className="rkpg-plainlist" style={{ marginTop: 10 }}>
+                {items.map((it, idx) => (
+                  <li
+                    key={`${it?.name}-${idx}`}
+                    className="rkpg-row-between rkpg-click"
+                    style={{ alignItems: "center" }}
+                    onClick={() => openInsight(`${abbreviateAreaName(it?.name)} 인사이트`, { type: "area", key: it?.name })}
+                  >
+                    <span>
+                      <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+                      <b>{abbreviateAreaName(it?.name)}</b>
+                    </span>
+                    <span className="rkpg-muted">{String(it?.meta ?? "")}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="rkpg-smallhint" style={{ marginTop: 10 }}>표시할 데이터가 없습니다.</div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    // Consumer: area item
     if (type === "area") {
       const item = hotAreas.find((a) => a.name === key);
       const parts = item?._scoreParts || {};
       const pct = (x) => `${Math.round((Number(x) || 0) * 100)}%`;
+
       return (
         <div className="rkpg-insight">
           <div className="rkpg-insight-box">
@@ -878,13 +898,15 @@ export default function RankingPage() {
                 <div className="rkpg-smallhint">크롤링 리뷰(카페당 최대 10개) 포착치 기반</div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <button className="rkpg-btn" onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>산정 방식</button>
+<button className="rkpg-btn" style={ACTION_BTN_STYLE} onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>
+                  산정 방식
+                </button>
                 <Pill tone="info">핫플</Pill>
               </div>
             </div>
 
             <div className="rkpg-opprow-grid" style={{ marginTop: 10 }}>
-              <div className="rkpg-insight-ul">• 종합 점수: <b>{item?.score100 ?? "-"}</b></div>
+              <div className="rkpg-insight-ul">• 점수(참고): <b>{item?.score100 ?? "-"}</b></div>
               <div className="rkpg-insight-ul">• 카페 수: <b>{item?.cafeCount ?? "-"}</b></div>
               <div className="rkpg-insight-ul">• 평균 리뷰(캡10): <b>{item ? item.avgReviewCap10.toFixed(1) : "-"}/10</b></div>
               <div className="rkpg-insight-ul">• 10/10 비율: <b>{item ? pct(item.full10Ratio) : "-"}</b></div>
@@ -907,7 +929,17 @@ export default function RankingPage() {
               <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {(item?.topMenus ?? []).length ? (
                   item.topMenus.map((m) => (
-                    <span key={m.name} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(0,0,0,0.12)" }}>
+                    <span
+                      key={m.name}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid rgba(0,0,0,0.12)",
+                      }}
+                    >
                       <Pill tone={menuCatTone(m.cat)}>{m.label}</Pill>
                       <span style={{ marginLeft: 8 }}>{m.name}</span>
                       <span className="rkpg-muted" style={{ marginLeft: 8 }}>({m.mentions})</span>
@@ -923,156 +955,282 @@ export default function RankingPage() {
       );
     }
 
-// Creator: 상세 패널
-    if (type === "creator") {
-      if (key === "menu") {
-        const items = (creator?.menuTrends ?? []).slice(0, 10);
-        const max = Math.max(1, ...items.map((x) => Number(x.mentions ?? 0)));
-        return (
-          <div className="rkpg-insight">
-            <div className="rkpg-insight-box">
-              <div className="rkpg-row-between">
-                <div>
-                  <b>메뉴 트렌드</b>
-                  <div className="rkpg-smallhint">언급 카페 수 기준</div>
-                </div>
-                <Pill tone="info">메뉴</Pill>
+    // Creator: about
+    if (type === "creatorAbout") {
+      const meta = creatorData?.meta;
+      return (
+        <div className="rkpg-insight">
+          <div className="rkpg-insight-box">
+            <div className="rkpg-row-between">
+              <div>
+                <b>창업자 인사이트 산정 방식</b>
+                <div className="rkpg-smallhint">상권 분석/수요 예측 배제 · 시간 트렌드(최근성) 미사용 · 키워드 언급량 기반</div>
               </div>
+              <Pill tone="muted">설명</Pill>
+            </div>
 
-              <div style={{ marginTop: 10 }}>
-                {items.length ? (
-                  items.map((m) => (
-                    <div key={m.name} style={{ marginBottom: 12 }}>
-                      <div className="rkpg-row-between">
-                        <span>{m.name}</span>
-                        <b>{Number(m.mentions).toLocaleString()}곳</b>
-                      </div>
-                      <Progress label="언급 카페 수" value={Number(m.mentions)} max={max} />
-                    </div>
-                  ))
-                ) : (
-                  <div className="rkpg-smallhint">표시할 데이터가 없습니다.</div>
-                )}
+            <div className="rkpg-insight-ul">
+              • 데이터: 카페별 <b>keyword_counts_json</b> 우선, 없으면 <b>top_keywords_json</b>로 폴백<br />
+              • 메뉴/컨셉 분류: <b>keyword_dict</b>(canonical + synonyms) 기준 통합<br />
+              • 시간 트렌드(최근성) 분석은 프로젝트 단계에서 사용하지 않습니다.
+            </div>
+
+            <div className="rkpg-insight-box" style={{ marginTop: 12 }}>
+              <div className="rkpg-smallhint">
+                점수는 언급량(mentionCount)과 등장 카페수(cafeCount)를 함께 반영합니다.
+              </div>
+              <div className="rkpg-insight-ul" style={{ marginTop: 8 }}>
+                • score ≈ 0.7×log(1+mentionCount) + 0.3×log(1+cafeCount) × weight
               </div>
             </div>
 
-          </div>
-        );
-      }
-
-      if (key === "opportunity") {
-        const items = (creator?.opportunityAreas ?? []).slice(0, 10);
-        return (
-          <div className="rkpg-insight">
-            <div className="rkpg-insight-box">
-              <div className="rkpg-row-between">
-                <div>
-                  <b>상권 기회지수 TOP</b>
-                  <div className="rkpg-smallhint">수요/공급 비율 기반 정규화</div>
-                </div>
-                <Pill tone="info">입지</Pill>
+            {meta ? (
+              <div className="rkpg-smallhint" style={{ marginTop: 12 }}>
+                사용 카페 수: {safeNum(meta.cafesUsed).toLocaleString()} · 기준시각: {String(meta.asOf || "")}<br />
+                {meta.note ? `비고: ${meta.note}` : null}
               </div>
-
-              <div style={{ marginTop: 10 }}>
-                {items.length ? (
-                  items.map((a) => (
-                    <div key={a.name} style={{ marginBottom: 12 }}>
-                      <div className="rkpg-row-between">
-                        <span>{a.name}</span>
-                        <b>{a.opportunity}</b>
-                      </div>
-                      <div className="rkpg-opprow-grid">
-                        <div className="rkpg-insight-ul">• 수요 <b>{a.demand}</b></div>
-                        <div className="rkpg-insight-ul">• 공급 <b>{a.supply}</b></div>
-                      </div>
-                      <Progress label="기회지수" value={Number(a.opportunity)} max={100} />
-                      {a.meta ? <div className="rkpg-smallhint">{a.meta}</div> : null}
-                    </div>
-                  ))
-                ) : (
-                  <div className="rkpg-smallhint">표시할 데이터가 없습니다.</div>
-                )}
+            ) : (
+              <div className="rkpg-smallhint" style={{ marginTop: 12 }}>
+                meta 정보가 없습니다.
               </div>
-            </div>
+            )}
           </div>
-        );
-      }
+        </div>
+      );
+    }
 
-      if (key === "needs") {
-        const items = (creator?.needsTop ?? []).slice(0, 20);
-        return (
-          <div className="rkpg-insight">
-            <div className="rkpg-insight-box">
-              <div className="rkpg-row-between rkpg-rowgap">
-                <div>
-                  <b>고객 니즈 TOP</b>
-                  <div className="rkpg-smallhint">리뷰에서 “좋다/편하다”로 자주 묶이는 요소</div>
-                </div>
-                <Pill tone="good">니즈</Pill>
-              </div>
-
-              <ul className="rkpg-plainlist" style={{ marginTop: 10 }}>
-                {items.length ? items.map((k) => (
-                  <li key={k.name} className="rkpg-row-between">
-                    <span>{k.name}</span>
-                    <b>{Number(k.mentions).toLocaleString()}</b>
-                  </li>
-                )) : <li className="rkpg-muted">표시할 데이터가 없습니다.</li>}
-              </ul>
-            </div>
+    // Creator: list drawers
+    const listDrawer = (title, items, renderRow) => (
+      <div className="rkpg-insight">
+        <div className="rkpg-insight-box">
+          <div className="rkpg-row-between">
+            <b>{title}</b>
+            <Pill tone="muted">전체</Pill>
           </div>
-        );
-      }
 
-      if (key === "hotspot") {
-        const items = (creator?.dessertHotspots ?? []).slice(0, 10);
-        return (
-          <div className="rkpg-insight">
-            <div className="rkpg-insight-box">
-              <div className="rkpg-row-between rkpg-rowgap">
-                <div>
-                  <b>상권별 특화 메뉴 TOP</b>
-                  <div className="rkpg-smallhint">전체 대비 상권에서 더 자주 나오는 디저트</div>
-                </div>
-                <Pill tone="info">메뉴×입지</Pill>
-              </div>
+          {items.length ? (
+            <ul className="rkpg-plainlist" style={{ marginTop: 10 }}>
+              {items.map((it, idx) => (
+                <li key={`${idx}-${it?.keyword || it?.a || ""}`} className="rkpg-row-between" style={{ alignItems: "center" }}>
+                  {renderRow(it, idx)}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="rkpg-smallhint" style={{ marginTop: 10 }}>표시할 데이터가 없습니다.</div>
+          )}
+        </div>
+      </div>
+    );
 
-              {items.length ? (
-                <div style={{ marginTop: 10 }}>
-                  {items.map((h) => (
-                    <div key={`${h.area}-${h.dessert}`} style={{ marginBottom: 12 }}>
-                      <div className="rkpg-row-between">
-                        <span>{h.area}</span>
-                        <b>{h.dessert} · {h.share}% · {h.lift}배</b>
-                      </div>
-                      <Progress label="집중도" value={Number(h.share)} max={100} />
-                      <div className="rkpg-smallhint">
-                        {Number(h.cafes).toLocaleString()} / {Number(h.total).toLocaleString()}곳
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rkpg-smallhint" style={{ marginTop: 10 }}>
-                  표시할 특화 메뉴가 없습니다. (케이크 제외/표본 5곳 기준)
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
+    if (type === "creatorMenus") {
+      const items = safeArr(creatorData?.menus);
+      return listDrawer("메뉴 트렌드 전체", items, (it, idx) => (
+        <>
+          <span>
+            <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+            <Pill tone={menuCatTone(it?.category)}>{menuCatLabel(it?.category)}</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.keyword ?? "")}</b>
+          </span>
+          <span className="rkpg-muted">언급 {safeNum(it?.mentionCount).toLocaleString()} · 카페 {safeNum(it?.cafeCount).toLocaleString()}</span>
+        </>
+      ));
+    }
+
+    if (type === "creatorPairs") {
+      const items = safeArr(creatorData?.pairs)
+        .filter((p) => safeNum(p?.cafeCount) >= 3)
+        .sort((a, b) => {
+          const d1 = safeNum(b?.cafeCount) - safeNum(a?.cafeCount);
+          if (d1) return d1;
+          const d2 = safeNum(b?.strength) - safeNum(a?.strength);
+          if (d2) return d2;
+          const an = `${String(a?.a || "")}+${String(a?.b || "")}`;
+          const bn = `${String(b?.a || "")}+${String(b?.b || "")}`;
+          return an.localeCompare(bn, "ko");
+        });
+      return listDrawer("메뉴 조합 전체", items, (it, idx) => (
+        <>
+          <span>
+            <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+            <Pill tone={menuCatTone(it?.aCategory)}>{menuCatLabel(it?.aCategory)}</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.a ?? "")}</b>
+            <span className="rkpg-muted" style={{ margin: "0 8px" }}>+</span>
+            <Pill tone={menuCatTone(it?.bCategory)}>{menuCatLabel(it?.bCategory)}</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.b ?? "")}</b>
+          </span>
+          <span className="rkpg-muted">강도 {safeNum(it?.strength).toLocaleString()} · 카페 {safeNum(it?.cafeCount).toLocaleString()}</span>
+        </>
+      ));
+    }
+
+    if (type === "creatorPurpose") {
+      const items = safeArr(creatorData?.purpose);
+      return listDrawer("목적(컨셉) 전체", items, (it, idx) => (
+        <>
+          <span>
+            <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+            <Pill tone="info">목적</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.keyword ?? "")}</b>
+          </span>
+          <span className="rkpg-muted">언급 {safeNum(it?.mentionCount).toLocaleString()} · 카페 {safeNum(it?.cafeCount).toLocaleString()}</span>
+        </>
+      ));
+    }
+
+    if (type === "creatorAtmosphere") {
+      const items = safeArr(creatorData?.atmosphere);
+      return listDrawer("분위기 전체", items, (it, idx) => (
+        <>
+          <span>
+            <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+            <Pill tone="good">분위기</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.keyword ?? "")}</b>
+          </span>
+          <span className="rkpg-muted">언급 {safeNum(it?.mentionCount).toLocaleString()} · 카페 {safeNum(it?.cafeCount).toLocaleString()}</span>
+        </>
+      ));
+    }
+
+    if (type === "creatorTaste") {
+      const items = safeArr(creatorData?.taste);
+      return listDrawer("맛 키워드 전체", items, (it, idx) => (
+        <>
+          <span>
+            <span className="rkpg-muted" style={{ marginRight: 8 }}>{idx + 1}.</span>
+            <Pill tone="muted">맛</Pill>
+            <b style={{ marginLeft: 8 }}>{String(it?.keyword ?? "")}</b>
+          </span>
+          <span className="rkpg-muted">언급 {safeNum(it?.mentionCount).toLocaleString()} · 카페 {safeNum(it?.cafeCount).toLocaleString()}</span>
+        </>
+      ));
     }
 
     // default
     return (
       <div className="rkpg-insight">
         <div className="rkpg-insight-box">
-          <b>상세 근거/액션</b>
-          <div className="rkpg-insight-ul">선택한 항목에 대한 근거/액션을 표시합니다.</div>
+          <b>상세</b>
+          <div className="rkpg-insight-ul">선택한 항목에 대한 상세 내용을 표시합니다.</div>
         </div>
       </div>
     );
-  }, [drawerCtx, dessertTrend, hotAreas, creator]);
+  }, [drawerCtx, allMenus, dictMenus, missingMenus, menuCounts, menuCatMap, dessertTrend, hotAreas, creatorData, openInsight, menuAllFilter, menuAllSort, menuMentionsMap]);
+
+  // Creator: cards data
+  const creatorCards = useMemo(() => {
+    const menus = safeArr(creatorData?.menus).slice(0, 10);
+    const pairs = safeArr(creatorData?.pairs)
+      .filter((p) => safeNum(p?.cafeCount) >= 3)
+      .sort((a, b) => {
+        const d1 = safeNum(b?.cafeCount) - safeNum(a?.cafeCount);
+        if (d1) return d1;
+        const d2 = safeNum(b?.strength) - safeNum(a?.strength);
+        if (d2) return d2;
+        const an = `${String(a?.a || "")}+${String(a?.b || "")}`;
+        const bn = `${String(b?.a || "")}+${String(b?.b || "")}`;
+        return an.localeCompare(bn, "ko");
+      })
+      .slice(0, 10);
+    const purpose = safeArr(creatorData?.purpose).slice(0, 10);
+    const atmosphere = safeArr(creatorData?.atmosphere).slice(0, 10);
+    const taste = safeArr(creatorData?.taste).slice(0, 10);
+
+    return [
+      {
+        id: "menus",
+        title: "메뉴 트렌드 TOP",
+        pill: <Pill tone="info">메뉴</Pill>,
+        hint: "언급량 + 등장 카페수 기반",
+        items: menus,
+        onAll: () => openInsight("메뉴 트렌드 전체", { type: "creatorMenus" }),
+        renderItem: (it, idx) => (
+          <li key={`${it.keyword}-${idx}`} className="rank-item">
+            <div className="rank-num">{idx + 1}</div>
+            <div className="rank-main">
+              <div className="rank-name">
+                <Pill tone={menuCatTone(it.category)}>{menuCatLabel(it.category)}</Pill> {it.keyword}
+              </div>
+              <div className="rank-meta">언급 {safeNum(it.mentionCount).toLocaleString()} · 카페 {safeNum(it.cafeCount).toLocaleString()}</div>
+            </div>
+          </li>
+        ),
+      },
+      {
+        id: "pairs",
+        title: "메뉴 조합 TOP",
+        pill: <Pill tone="info">조합</Pill>,
+        hint: "카페 3곳 이상에서 같이 등장",
+        items: pairs,
+        onAll: () => openInsight("메뉴 조합 전체", { type: "creatorPairs" }),
+        renderItem: (it, idx) => (
+          <li key={`${it.a}-${it.b}-${idx}`} className="rank-item">
+            <div className="rank-num">{idx + 1}</div>
+            <div className="rank-main">
+              <div className="rank-name">
+                <Pill tone={menuCatTone(it.aCategory)}>{menuCatLabel(it.aCategory)}</Pill> {it.a}
+                <span className="rkpg-muted" style={{ margin: "0 8px" }}>+</span>
+                <Pill tone={menuCatTone(it.bCategory)}>{menuCatLabel(it.bCategory)}</Pill> {it.b}
+              </div>
+              <div className="rank-meta">강도 {safeNum(it.strength).toLocaleString()} · 카페 {safeNum(it.cafeCount).toLocaleString()}</div>
+            </div>
+          </li>
+        ),
+      },
+      {
+        id: "purpose",
+        title: "목적(컨셉) TOP",
+        pill: <Pill tone="info">목적</Pill>,
+        hint: "타겟/방문 목적 힌트",
+        items: purpose,
+        onAll: () => openInsight("목적(컨셉) 전체", { type: "creatorPurpose" }),
+        renderItem: (it, idx) => (
+          <li key={`${it.keyword}-${idx}`} className="rank-item">
+            <div className="rank-num">{idx + 1}</div>
+            <div className="rank-main">
+              <div className="rank-name">{it.keyword}</div>
+              <div className="rank-meta">언급 {safeNum(it.mentionCount).toLocaleString()} · 카페 {safeNum(it.cafeCount).toLocaleString()}</div>
+            </div>
+          </li>
+        ),
+      },
+      {
+        id: "atmosphere",
+        title: "분위기 TOP",
+        pill: <Pill tone="good">분위기</Pill>,
+        hint: "공간 설계 방향",
+        items: atmosphere,
+        onAll: () => openInsight("분위기 전체", { type: "creatorAtmosphere" }),
+        renderItem: (it, idx) => (
+          <li key={`${it.keyword}-${idx}`} className="rank-item">
+            <div className="rank-num">{idx + 1}</div>
+            <div className="rank-main">
+              <div className="rank-name">{it.keyword}</div>
+              <div className="rank-meta">언급 {safeNum(it.mentionCount).toLocaleString()} · 카페 {safeNum(it.cafeCount).toLocaleString()}</div>
+            </div>
+          </li>
+        ),
+      },
+      {
+        id: "taste",
+        title: "맛 키워드 TOP",
+        pill: <Pill tone="muted">맛</Pill>,
+        hint: "맛 포지셔닝",
+        items: taste,
+        onAll: () => openInsight("맛 키워드 전체", { type: "creatorTaste" }),
+        renderItem: (it, idx) => (
+          <li key={`${it.keyword}-${idx}`} className="rank-item">
+            <div className="rank-num">{idx + 1}</div>
+            <div className="rank-main">
+              <div className="rank-name">{it.keyword}</div>
+              <div className="rank-meta">언급 {safeNum(it.mentionCount).toLocaleString()} · 카페 {safeNum(it.cafeCount).toLocaleString()}</div>
+            </div>
+          </li>
+        ),
+      },
+    ];
+  }, [creatorData, openInsight]);
+
   return (
     <div className="rkpg-page">
       <Header />
@@ -1082,21 +1240,20 @@ export default function RankingPage() {
           <div>
             <div className="rkpg-title">디저트 카페 트렌딩 랭킹</div>
             <div className="rkpg-sub">
-              데이터 기반으로 디저트·상권·카페를 탐색해보세요. <span className="rkpg-muted" style={{ marginLeft: 10 }}></span>
+              데이터 기반으로 디저트·거리·키워드를 탐색해보세요.
               {serverUpdatedAt ? <span style={{ marginLeft: 10, opacity: 0.85 }}>데이터 기준일: {serverUpdatedAt}</span> : null}
               {bootLoading ? <span style={{ marginLeft: 10, opacity: 0.85 }}>불러오는 중…</span> : null}
               {!bootLoading ? (
                 bootError ? (
-                  <span style={{ marginLeft: 10, opacity: 0.85 }}>API 연결 실패(모의 데이터 사용): {bootError}</span>
+                  <span style={{ marginLeft: 10, opacity: 0.85 }}>API 연결 실패: {bootError}</span>
                 ) : (
-                  <span style={{ marginLeft: 10, opacity: 0.85 }}>{apiCafes?.length ? "API 연결됨" : "모의 데이터"}</span>
+                  <span style={{ marginLeft: 10, opacity: 0.85 }}>{apiCafes?.length ? "API 연결됨" : "-"}</span>
                 )
               ) : null}
             </div>
           </div>
 
           <div className="rkpg-filters">
-            {/* Consumer / Creator 탭 */}
             <div className="rkpg-seg" style={{ marginRight: 6 }}>
               <button className={mode === "consumer" ? "is-active" : ""} onClick={() => setMode("consumer")}>
                 소비자
@@ -1105,9 +1262,6 @@ export default function RankingPage() {
                 창업자
               </button>
             </div>
-
-
-            
           </div>
         </div>
 
@@ -1121,83 +1275,102 @@ export default function RankingPage() {
               <div className="rank-section-sub">메인 하단 인기 지표를 페이지로 확장한 화면입니다.</div>
 
               <div className="rank-grid" style={{ alignItems: "flex-start" }}>
-                {/* 디저트 */}
+                {/* 인기 메뉴 TOP */}
                 <div className="rank-block" style={{ alignSelf: "flex-start" }}>
                   <div className="rank-block-header">
                     <div>
                       <div className="rank-block-title">인기 메뉴 TOP</div>
                       <div className="rkpg-smallhint">{menuViewHint}</div>
+                      <div className="rkpg-smallhint">기준: 키워드가 등장한 카페 수(카페 내 중복 제거) · 동점 시 가나다 정렬</div>
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <div className="rkpg-seg" style={{ marginRight: 6 }}>
-                        <button className={menuView === "all" ? "is-active" : ""} onClick={() => onChangeMenuView("all")}>전체</button>
-                        <button className={menuView === "drink" ? "is-active" : ""} onClick={() => onChangeMenuView("drink")}>음료</button>
-                        <button className={menuView === "dessert_meal" ? "is-active" : ""} onClick={() => onChangeMenuView("dessert_meal")}>디저트+식사</button>
+                        <button className={menuView === "all" ? "is-active" : ""} onClick={() => onChangeMenuView("all")}>
+                          전체
+                        </button>
+                        <button className={menuView === "drink" ? "is-active" : ""} onClick={() => onChangeMenuView("drink")}>
+                          음료
+                        </button>
+                        <button className={menuView === "dessert_meal" ? "is-active" : ""} onClick={() => onChangeMenuView("dessert_meal")}>
+                          디저트+식사
+                        </button>
                       </div>
-
-                      <button
-                        className="rkpg-btn"
-                        style={{ padding: "6px 10px", fontSize: 12 }}
-                        onClick={() => openInsight("전체 메뉴 보기", { type: "menuAll" })}
-                      >
-                        전체 보기
-                      </button>
-                      <span className="rank-tag">언급</span>
+<span className="rank-tag" style={TAG_STYLE}>언급</span>
                     </div>
                   </div>
 
                   <ul className="rank-list">
                     {menuVisible.length === 0 ? (
-                      <li className="rank-item"><div className="rank-main"><div className="rank-meta">표시할 메뉴가 없습니다.</div></div></li>
+                      <li className="rank-item">
+                        <div className="rank-main">
+                          <div className="rank-meta">표시할 메뉴가 없습니다.</div>
+                        </div>
+                      </li>
                     ) : null}
+
                     {menuVisible.map((it, idx) => (
                       <li
                         key={it.name}
                         className="rank-item rkpg-click"
-                        onClick={() => openInsight(`[${menuCatLabel(it.category)}] ${it.name} 인사이트`, { type: "dessert", key: it.name })}
+                        onClick={() => openInsight(`[${menuCatLabel(it.category)}] ${it.name} 인사이트`, { type: "menu", key: it.name })}
                       >
                         <div className="rank-num">{idx + 1}</div>
                         <div className="rank-main">
-                          <div className="rank-name"><Pill tone={menuCatTone(it.category)}>{menuCatLabel(it.category)}</Pill> {it.name}</div>
-                          <div className="rank-meta">언급 카페 {it.mentions}곳</div>
+                          <div className="rank-name">
+                            <Pill tone={menuCatTone(it.category)}>{menuCatLabel(it.category)}</Pill> {it.name}
+                          </div>
+                          <div className="rank-meta">언급 카페 {safeNum(it.mentions).toLocaleString()}곳</div>
                         </div>
                       </li>
                     ))}
                   </ul>
 
-                  {menuRankAll.length > 10 ? (
-                    <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
-                      {menuVisible.length < menuRankAll.length ? (
-                        <button
-                          className="rkpg-btn"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => setMenuShowCount((p) => Math.min((Number(p) || 0) + 10, menuRankAll.length))}
-                        >
-                          더보기
-                        </button>
-                      ) : menuShowCount > 10 ? (
-                        <button
-                          className="rkpg-btn"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => setMenuShowCount(10)}
-                        >
-                          접기
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {menuRankAll.length > 10 ? (() => {
+                    const inlineMax = Math.min(menuRankAll.length, 20);
+                    return (
+                      <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
+                        {menuShowCount < inlineMax ? (
+                          <button
+                            className="rkpg-btn"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => setMenuShowCount((p) => Math.min((Number(p) || 0) + 10, inlineMax))}
+                          >
+                            더보기
+                          </button>
+                        ) : null}
+
+                        {menuShowCount > 10 ? (
+                          <button className="rkpg-btn" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setMenuShowCount(10)}>
+                            접기
+                          </button>
+                        ) : null}
+
+                        {menuRankAll.length > inlineMax ? (
+                          <button
+                            className="rkpg-btn"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => openInsight("전체 메뉴 보기", { type: "menuAll" })}
+                          >
+                            전체 보기
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
                 </div>
 
-                {/* 동네 */}
+                {/* 핫한 거리 TOP */}
                 <div className="rank-block" style={{ alignSelf: "flex-start" }}>
                   <div className="rank-block-header">
                     <div>
                       <div className="rank-block-title">핫한 거리 TOP</div>
-                      <div className="rkpg-smallhint">기준: 크롤링 리뷰(카페당 최대 10개) 포착치 기반</div>
+                      <div className="rkpg-smallhint">기준: 크롤링 리뷰(카페당 최대 10개) 포착치 기반 · 집계대상: 카페 3곳 이상(부족시 완화)</div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      <button className="rkpg-btn" onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>산정 방식</button>
-                      <span className="rank-tag rank-tag-secondary">핫플</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button className="rkpg-btn" style={ACTION_BTN_STYLE} onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>
+                        산정 방식
+                      </button>
+                      <span className="rank-tag rank-tag-secondary" style={TAG_STYLE}>핫플</span>
                     </div>
                   </div>
 
@@ -1206,115 +1379,118 @@ export default function RankingPage() {
                       <li
                         key={it.name}
                         className="rank-item rkpg-click"
-                        onClick={() => openInsight(`${it.name} 인사이트`, { type: "area", key: it.name })}
+                        onClick={() => openInsight(`${abbreviateAreaName(it.name)} 인사이트`, { type: "area", key: it.name })}
                       >
                         <div className="rank-num">{idx + 1}</div>
                         <div className="rank-main">
-                          <div className="rank-name">{it.name}</div>
+                          <div className="rank-name">{abbreviateAreaName(it.name)}</div>
                           <div className="rank-meta">{it.meta}</div>
                         </div>
                       </li>
                     ))}
                   </ul>
 
-                  {Array.isArray(hotAreas) && hotAreas.length > 10 ? (
-                    <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
-                      {hotVisible.length < hotAreas.length ? (
-                        <button
-                          className="rkpg-btn"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => setHotShowCount((p) => Math.min((Number(p) || 0) + 10, hotAreas.length))}
-                        >
-                          더보기
-                        </button>
-                      ) : hotShowCount > 10 ? (
-                        <button
-                          className="rkpg-btn"
-                          style={{ padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => setHotShowCount(10)}
-                        >
-                          접기
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                  {Array.isArray(hotAreas) && hotAreas.length > 10 ? (() => {
+                    const inlineMax = Math.min(hotAreas.length, 20);
+                    return (
+                      <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
+                        {hotShowCount < inlineMax ? (
+                          <button
+                            className="rkpg-btn"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => setHotShowCount((p) => Math.min((Number(p) || 0) + 10, inlineMax))}
+                          >
+                            더보기
+                          </button>
+                        ) : null}
 
+                        {hotShowCount > 10 ? (
+                          <button className="rkpg-btn" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => setHotShowCount(10)}>
+                            접기
+                          </button>
+                        ) : null}
+
+                        {hotAreas.length > inlineMax ? (
+                          <button
+                            className="rkpg-btn"
+                            style={{ padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => openInsight("핫한 거리 전체", { type: "areaAll" })}
+                          >
+                            전체 보기
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })() : null}
                 </div>
               </div>
             </section>
           </>
-        ) : (
-          /* ---------------------------
-              Creator 영역
-             --------------------------- */
+	        ) : (
+          <>
+            {/* ---------------------------
+	              Creator 영역
+	             --------------------------- */}
           <section className="rkpg-creator">
             <div className="rkpg-creator-head">
               <div>
                 <div className="rkpg-creator-title">창업자 인사이트</div>
-                <div className="rkpg-creator-sub rkpg-muted">
-                  카페 메뉴/키워드 동향을 알아가세요
-                </div>
               </div>
               <div className="rkpg-creator-right">
-                <button className="rkpg-btn" onClick={() => navigate("/map")}>
-                  지도에서 상권 보기
+                <button className="rkpg-btn" style={ACTION_BTN_STYLE} onClick={() => openInsight("창업자 인사이트 산정 방식", { type: "creatorAbout" })}>
+                  산정 방식
                 </button>
               </div>
             </div>
-            <div className="rkpg-card" style={{ marginTop: 12 }}>
-</div>
 
-            {/* KPI 타일 */}
-            <div className="rkpg-kpi-grid">
-              {creatorKpis.map((k, i) => (
-                <button key={i} className={`rkpg-kpi ${k.tone}`} onClick={k.onClick}>
-                  <div className="rkpg-kpi-label">{k.label}</div>
-                  <div className="rkpg-kpi-value">{k.value}</div>
-                  <div className="rkpg-kpi-hint">{k.hint}</div>
-                </button>
-              ))}
-            </div>
+            {creatorLoading ? (
+              <div className="rkpg-card" style={{ marginTop: 12 }}>
+                <div className="rkpg-smallhint">불러오는 중…</div>
+              </div>
+            ) : creatorError ? (
+              <div className="rkpg-card" style={{ marginTop: 12 }}>
+                <div className="rkpg-smallhint">API 연결 실패: {creatorError}</div>
+              </div>
+            ) : null}
 
-            {/* 인사이트 카드 */}
-            <div className="rkpg-creator-grid">
+            <div className="rkpg-creator-grid" style={{ marginTop: 12 }}>
               {creatorCards.map((card) => (
                 <div key={card.id} className="rkpg-card">
                   <div className="rkpg-card-head">
                     <div>
                       <div className="rkpg-card-title">{card.title}</div>
-                      <div className="rkpg-card-sub">{card.desc}</div>
+                      <div className="rkpg-card-sub">{card.hint}</div>
                     </div>
                     <div className="rkpg-card-right">
-                      <Pill tone={card.tone}>{card.pill}</Pill>
+                      {card.pill}
                     </div>
                   </div>
 
                   <div className="rkpg-card-body">
-                    <div className="rkpg-list">
-                      {card.rows.map((r, idx) => (
-                        <div key={idx} className="rkpg-list-row">
-                          <b>{r.left}</b>
-                          <span className="rkpg-muted">{r.right}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="rkpg-smallhint">
-                      클릭하면 “근거 → 액션” 흐름으로 바로 정리해드립니다.
-                    </div>
+                    <ul className="rank-list" style={{ marginTop: 0 }}>
+                      {card.items.length ? card.items.map(card.renderItem) : (
+                        <li className="rank-item">
+                          <div className="rank-main">
+                            <div className="rank-meta">표시할 데이터가 없습니다.</div>
+                          </div>
+                        </li>
+                      )}
+                    </ul>
                   </div>
 
                   <div className="rkpg-card-foot">
-                    <button className="rkpg-btn primary" onClick={() => openInsight(card.title, card.ctx)}>
-                      {card.cta} →
+                    <button className="rkpg-btn primary" onClick={card.onAll}>
+                      전체 보기 →
                     </button>
                   </div>
                 </div>
               ))}
             </div>
           </section>
+          </>
         )}
 
-        <Drawer open={drawerOpen} title={drawerTitle} onClose={() => setDrawerOpen(false)}>
+        <Drawer open={drawerOpen} title={drawerTitle} onClose={() => setDrawerOpen(false)} bodyRef={drawerBodyRef}>
           {renderDrawerBody()}
         </Drawer>
       </main>
