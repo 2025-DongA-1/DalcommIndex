@@ -42,6 +42,48 @@ async function tableExists(tableName) {
   return ok;
 }
 
+// ===== user_reviews 평점(AVG) 캐시 =====
+const __userRatingCache = { expiresAt: 0, map: new Map() };
+const USER_RATING_CACHE_TTL_MS = 2 * 60 * 1000;
+
+async function getUserRatingAggMap() {
+  const now = Date.now();
+  if (__userRatingCache.expiresAt > now && __userRatingCache.map && __userRatingCache.map.size) {
+    return __userRatingCache.map;
+  }
+
+  // DB 미설정이면 평점 집계 불가
+  if (!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME)) {
+    return new Map();
+  }
+
+  try {
+    const ok = await tableExists("user_reviews");
+    if (!ok) return new Map();
+
+    const [rows] = await pool.query(
+      `SELECT cafe_id, AVG(rating) AS avg_rating
+         FROM user_reviews
+        WHERE rating IS NOT NULL
+        GROUP BY cafe_id`
+    );
+
+    const map = new Map();
+    for (const r of rows) {
+      const id = Number(r.cafe_id);
+      const avg = r.avg_rating == null ? null : Number(r.avg_rating);
+      if (Number.isFinite(id) && Number.isFinite(avg)) map.set(id, Number(avg.toFixed(2)));
+    }
+
+    __userRatingCache.map = map;
+    __userRatingCache.expiresAt = now + USER_RATING_CACHE_TTL_MS;
+    return map;
+  } catch (e) {
+    console.warn("[user_reviews] rating agg failed:", e?.message || e);
+    return new Map();
+  }
+}
+
 const __colCache = new Map();
 async function usersHasColumn(col) {
   if (__colCache.has(col)) return __colCache.get(col);
@@ -367,12 +409,22 @@ function pickCafeResultFields(cafe) {
 
 
   return {
-    id: cafe.id,
+    // ✅ PlacePopup이 우선 사용하는 키
+    cafe_id: cafe.cafe_id ?? cafe.id,
+
+    // 기존 호환(맵/리스트에서 id 쓰는 코드가 있을 수 있어 같이 유지)
+    id: cafe.id ?? cafe.cafe_id,
     region: cafe.region,
     name: cafe.name,
     address: cafe.address,
     url: cafe.url,
-    score: Number.isFinite(Number(cafe.score)) ? Number(cafe.score) : 0,
+    // 추가: user_reviews 평균 별점 (없으면 null)
+    rating:
+      cafe.rating == null
+        ? null
+        : (Number.isFinite(Number(cafe.rating)) ? Number(cafe.rating) : null),
+    // (선택) user_reviews 리뷰 수 (없으면 0)
+    reviewCountUser: Number(cafe.reviewCountUser || 0) || 0,
     mention_score: Number.isFinite(Number(cafe.mention_score)) ? Number(cafe.mention_score) : undefined,
     keyword_hits: Array.isArray(cafe.keyword_hits) ? cafe.keyword_hits : undefined,
     summary: cafe.summary,
@@ -396,7 +448,7 @@ function pickCafeResultFields(cafe) {
 }
 
 /** 지도 필터 */
-function handleFilter(req, res) {
+async function handleFilter(req, res) {
   try {
     if (!cafes.length) {
       return res.json({
@@ -407,7 +459,17 @@ function handleFilter(req, res) {
     }
     const prefs = req.body || {};
     const recs = recommendCafes(prefs, cafes, 200);
-    return res.json({ ok: true, results: recs.map(pickCafeResultFields) });
+    const ratingMap = await getUserRatingAggMap();
+    
+    const results = recs.map((c) => {
+      const out = pickCafeResultFields(c);
+      const cid = Number(out.id ?? c.id);
+      const avg = Number.isFinite(cid) ? ratingMap.get(cid) : null;
+      out.rating = avg == null ? null : avg; // ✅ PlacePopup에서 place.rating으로 사용
+      return out;
+    });
+
+    return res.json({ ok: true, results });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ ok: false, message: "Filter internal server error" });
@@ -1314,6 +1376,7 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
           reviewCountExternal: extReviewCount,       // 옵션
           userReviewCount,                          // 회원리뷰 개수
           userRatingAvg,                            // ✅ B: 회원 평균 평점
+          rating: userRatingAvg,
           reviewCountRecent: Number(r.review_count_recent || 0) || 0,
           lastMentionedAt: r.last_mentioned_at ?? null,
           score: Number(r.score_total || 0) || 0,

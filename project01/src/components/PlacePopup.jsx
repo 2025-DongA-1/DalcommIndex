@@ -5,10 +5,11 @@ import { useNavigate } from "react-router-dom";
 const API_BASE = import.meta.env.VITE_API_BASE || ""; // ✅ 서버 API base
 const FAVORITES_EVENT = "dalcomm_favorites_changed"; // ✅ 이벤트명 통일
 
-async function apiFetch(path, { method = "GET", body } = {}) {
+async function apiFetch(path, { method = "GET", body, signal } = {}) {
   const token = localStorage.getItem("accessToken");
   const res = await fetch(`${API_BASE}${path}`, {
     method,
+    signal,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -46,6 +47,11 @@ function pickFirstImageUrl(place) {
     return first ? String(first) : "";
   }
   return "";
+}
+
+function renderStars(n) {
+  const x = Math.max(0, Math.min(5, Number(n) || 0));
+  return "★".repeat(x) + "☆".repeat(5 - x);
 }
 
 /* =========================================================
@@ -297,97 +303,72 @@ function joinTags(list, sep = " · ") {
 
 // place의 여러 필드에서 토큰을 모아 카테고리로 재분류
 function derivePopupCategories(place) {
-  if (!place) {
-    return {
-      atmos: [],
-      purpose: [],
-      tasteMenu: [],
-      keywords: [],
-      parking: "",
-    };
-  }
+  if (!place)
+    return { atmos: [], purpose: [], taste: [], menu: [], keywords: [], parking: "" };
 
-  const rawBuckets = [
-    place?.atmosphere,
-    place?.atmosphere_norm,
-    place?.purpose,
-    place?.purpose_norm,
-    place?.taste,
-    place?.taste_norm,
-    place?.menu,
-    place?.mainMenu,
-    place?.main_menu,
-    place?.keywords,
-    place?.keyword,
-    place?.keyWords,
-    Array.isArray(place?.tags) ? place.tags : null,
-    Array.isArray(place?.keywordCounts)
-      ? place.keywordCounts
-          .map((w) => w?.text ?? w?.word ?? "")
-          .filter(Boolean)
-      : null,
-  ].filter((v) => v != null);
-
-  const all = [];
-  for (const v of rawBuckets) {
-    all.push(...splitTokens(v));
-  }
-
-  const seen = new Set();
   const atmos = [];
   const purpose = [];
-  const menu = [];
   const taste = [];
+  const menu = [];
   const extra = [];
 
-  // 우선순위: 목적 > 메뉴 > 맛 > 분위기 > 기타
-  for (const raw of all) {
-    const t = normToken(raw);
-    if (!t) continue;
-    if (seen.has(t)) continue;
-    seen.add(t);
+  const seen = new Set();
 
-    if (SET_PURPOSE.has(t)) {
-      purpose.push(t);
-      continue;
-    }
-    if (SET_MENU.has(t)) {
-      menu.push(t);
-      continue;
-    }
-    if (SET_TASTE.has(t)) {
-      taste.push(t);
-      continue;
-    }
-    if (SET_ATMOSPHERE.has(t)) {
-      atmos.push(t);
-      continue;
-    }
-    extra.push(t);
+  const push = (arr, t) => {
+    const v = normToken(t);
+    if (!v) return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    arr.push(v);
+  };
+
+  const addFrom = (arr, v) => {
+    if (typeof v === "string" && /정보\s*없음|미제공/.test(v)) return; // ✅ placeholder 제거
+    for (const t of splitTokens(v)) push(arr, t);
+  };
+
+  // 1) 카테고리별 필드 우선(이미 서버가 분리해서 내려주는 값)
+  [place.atmosphere, place.atmosphere_norm, place.atmosphereTags].forEach((v) => addFrom(atmos, v));
+  [place.purpose, place.purpose_norm, place.purposeTags].forEach((v) => addFrom(purpose, v));
+  [place.taste, place.taste_norm, place.tasteTags].forEach((v) => addFrom(taste, v));
+
+  [
+    place.menuTags,
+    place.mainMenu,
+    place.main_menu,
+    place.menu,
+    place.main_dessert,
+    place.main_coffee,
+  ].forEach((v) => addFrom(menu, v));
+
+  // 2) 나머지 키워드/태그/카운트는 보조적으로 분류
+  const rawBuckets = [
+    place.keywords,
+    place.keyword,
+    place.keyWords,
+    place.tags,
+    place.topKeywords,
+    place.keywordCounts,
+  ];
+
+  const all = [];
+  for (const v of rawBuckets) all.push(...splitTokens(v));
+
+  for (const t0 of all) {
+    const t = normToken(t0);
+    if (!t || seen.has(t)) continue;
+
+    if (SET_ATMOSPHERE.has(t)) push(atmos, t);
+    else if (SET_PURPOSE.has(t)) push(purpose, t);
+    else if (SET_TASTE.has(t)) push(taste, t);
+    else if (SET_MENU.has(t)) push(menu, t);
+    else push(extra, t);
   }
 
-  // "맛:"에는 메뉴+맛을 같이 보여주기
-  const tasteMenu = [];
-  const tmSeen = new Set();
-  for (const t of [...taste, ...menu]) {
-    if (tmSeen.has(t)) continue;
-    tmSeen.add(t);
-    tasteMenu.push(t);
-  }
+  const keywords = [...atmos, ...purpose, ...taste, ...menu, ...extra].slice(0, 12);
+  const parking = normalizeParking(place.parking ?? place._parking ?? "");
 
-  // 키워드(요약): 메뉴/맛/분위기/목적/기타 합쳐서 앞부분만
-  const keywords = [];
-  const kwSeen = new Set();
-  for (const t of [...menu, ...taste, ...atmos, ...purpose, ...extra]) {
-    if (kwSeen.has(t)) continue;
-    kwSeen.add(t);
-    keywords.push(t);
-    if (keywords.length >= 12) break;
-  }
-
-  const parking = normalizeParking(place?.parking);
-
-  return { atmos, purpose, tasteMenu, keywords, parking };
+  return { atmos, purpose, taste, menu, keywords, parking };
 }
 
 export default function PlacePopup({ open, place, onClose }) {
@@ -395,6 +376,7 @@ export default function PlacePopup({ open, place, onClose }) {
 
   const [tab, setTab] = useState("home"); // home | review | photo | info
   const [moreOpen, setMoreOpen] = useState(false);
+  const [detailCafe, setDetailCafe] = useState(null);
 
   // ✅ 즐겨찾기 상태(서버 기준)
   const [saved, setSaved] = useState(false);
@@ -468,6 +450,39 @@ export default function PlacePopup({ open, place, onClose }) {
     };
   }, [open, place, hasValidFavoriteId, favoriteCafeId]);
 
+  
+  useEffect(() => {
+    if (!open || !hasValidFavoriteId) {
+      setDetailCafe(null);
+      return;
+    }
+
+    // 태그/평점이 이미 있으면 굳이 호출하지 않도록(원하면 이 조건 제거 가능)
+    const hasAnyTagField = Boolean(
+      place?.atmosphere || place?.purpose || place?.taste || place?.menu || place?.mainMenu || place?.main_menu
+    );
+    const hasAnyRatingField = place?.rating != null || place?.userRatingAvg != null;
+
+    if (hasAnyTagField && hasAnyRatingField) {
+      setDetailCafe(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const data = await apiFetch(`/api/cafes/${encodeURIComponent(String(favoriteCafeId))}`, {
+          signal: controller.signal,
+        });
+        setDetailCafe(data?.cafe ?? data?.item ?? data);
+      } catch (e) {
+        if (e?.name !== "AbortError") setDetailCafe(null);
+      }
+    })();
+
+    return () => controller.abort();
+  }, [open, hasValidFavoriteId, favoriteCafeId]); 
+
   /**
    * ✅ 다른 화면에서 즐겨찾기가 변경되면(이벤트) 팝업 버튼도 서버 기준으로 재동기화
    */
@@ -531,9 +546,22 @@ export default function PlacePopup({ open, place, onClose }) {
     return uniq;
   }, [place]);
 
-  // ✅ (핵심) 카테고리 재분류 + 중복 제거 (훅은 반드시 return 이전에)
-  const cat = useMemo(() => derivePopupCategories(place), [place]);
+  const mergedPlace = useMemo(() => {
+    if (!place) return null;
+    const merged = detailCafe ? { ...place, ...detailCafe } : place;
 
+    // 좌표가 lat/lon으로 오는 경우 대비 (있으면 x/y로 보강)
+    if (merged.x == null && merged.lon != null) merged.x = merged.lon;
+    if (merged.y == null && merged.lat != null) merged.y = merged.lat;
+
+    // rating alias 보강
+    if (merged.rating == null && merged.userRatingAvg != null) merged.rating = merged.userRatingAvg;
+
+    return merged;
+  }, [place, detailCafe]);
+
+  const cat = useMemo(() => derivePopupCategories(mergedPlace), [mergedPlace]);
+    
   /** ✅ 저장 버튼 클릭 */
   const onToggleSave = async () => {
     if (!place || saveLoading) return;
@@ -674,28 +702,32 @@ export default function PlacePopup({ open, place, onClose }) {
   // ✅ 팝업이 닫혀있거나 place 없으면 렌더링 안함 (하지만 훅은 위에서 이미 모두 호출됨)
   if (!open || !place) return null;
 
-  const address = place?.address || "주소 정보 없음";
-  const region = place?.region || "";
-  const score = place?.score ? Number(place.score).toFixed(1) : null;
+  const address = mergedPlace?.address || "주소 정보 없음";
+  const region = mergedPlace?.region || "";
+  const ratingValue = mergedPlace?.userRatingAvg ?? mergedPlace?.rating;
+  const ratingNum = ratingValue == null ? null : Number(ratingValue);
+  const hasRating = Number.isFinite(ratingNum);
 
-  const phone = place?.phone || place?.tel || place?.telephone || place?.contact || "";
-  const homepage = place?.homepage || place?.site || place?.website || place?.url || "";
-  const hours = place?.hours || place?.open_hours || place?.openTime || place?.time || "";
+  const phone = mergedPlace?.phone || mergedPlace?.tel || mergedPlace?.telephone || mergedPlace?.contact || "";
+  const homepage = mergedPlace?.homepage || mergedPlace?.site || mergedPlace?.website || mergedPlace?.url || "";
+  const hours = mergedPlace?.hours || mergedPlace?.open_hours || mergedPlace?.openTime || mergedPlace?.time || "";
 
   // ✅ 중복 제거 + 재분류 결과
+// 기존: const atmosText = joinTags(cat.atmos); ...
   const atmosText = joinTags(cat.atmos);
+  const tasteText = joinTags(cat.taste);      // ✅ 맛만
   const purposeText = joinTags(cat.purpose);
-  const tasteText = joinTags(cat.tasteMenu);
+  const menuText = joinTags(cat.menu);        // ✅ 메뉴만
+  const keywordsText = joinTags(cat.keywords);
   const parkingText = cat.parking || normalizeParking(place?.parking);
-  const keywordsText = cat.keywords?.length ? cat.keywords.join(", ") : "";
 
-  const desc = place?.content || place?.summary || place?.desc || "";
+  const desc = mergedPlace?.content || mergedPlace?.summary || mergedPlace?.desc || "";
 
-  const lat = place?.y;
-  const lng = place?.x;
+  const lat = mergedPlace?.y;
+  const lng = mergedPlace?.x;
 
   const kakaoMapUrl =
-    place?.url || (lat && lng ? `https://map.kakao.com/link/map/${encodeURIComponent(name)},${lat},${lng}` : "");
+    mergedPlace?.url || (lat && lng ? `https://map.kakao.com/link/map/${encodeURIComponent(name)},${lat},${lng}` : "");
 
   const topPhotos = photos.slice(0, 3);
   const extraCount = Math.max(0, photos.length - topPhotos.length);
@@ -710,7 +742,7 @@ export default function PlacePopup({ open, place, onClose }) {
 
     const hash = targetTab === "review" ? "#reviews" : "";
     navigate(`/cafe/${cafeId}?${params.toString()}${hash}`, {
-      state: { cafe: place, initialTab: targetTab },
+      state: { cafe: mergedPlace, initialTab: targetTab },
     });
 
     onClose?.();
@@ -782,7 +814,8 @@ export default function PlacePopup({ open, place, onClose }) {
           <div className="pp-titleArea">
             <div className="pp-title">
               {name}
-              {score ? <span className="pp-score">★ {score}</span> : null}
+              <span className="pp-score">
+                평점 {hasRating ? <RatingLine value={ratingNum} /> : "평균없음"}</span>
             </div>
             <div className="pp-sub">
               {region ? <span className="pp-subItem">{region}</span> : null}
@@ -858,10 +891,11 @@ export default function PlacePopup({ open, place, onClose }) {
           {tab === "home" && (
             <>
               <div className="pp-chipRow">
-                {atmosText ? <span className="pp-chip">분위기: {atmosText}</span> : null}
-                {purposeText ? <span className="pp-chip">목적: {purposeText}</span> : null}
-                {tasteText ? <span className="pp-chip">맛: {tasteText}</span> : null}
-                {parkingText ? <span className="pp-chip">주차: {parkingText}</span> : null}
+                {atmosText && <span className="pp-chip">분위기: {atmosText}</span>}
+                {tasteText && <span className="pp-chip">맛: {tasteText}</span>}
+                {purposeText && <span className="pp-chip">목적: {purposeText}</span>}
+                {menuText && <span className="pp-chip">메뉴: {menuText}</span>}
+                {parkingText && <span className="pp-chip">주차: {parkingText}</span>}
               </div>
 
               {/* {keywordsText ? (

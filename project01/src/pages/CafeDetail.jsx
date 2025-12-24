@@ -444,7 +444,7 @@ export default function CafeDetail() {
                 if (!id) return;
 
                 navigate(`/map?focus=${encodeURIComponent(String(id))}`, {
-                  state: { focusCafe: { ...detail, id } },
+                  state: { focusCafe: { ...detail, id, rating: detail.userRatingAvg ?? null, } },
                 });
               }}
             >
