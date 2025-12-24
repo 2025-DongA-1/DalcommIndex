@@ -478,6 +478,33 @@ function neighborhoodFromAddress(address) {
   return parts.length >= 2 ? parts[1] : "";
 }
 
+// ===== 도로명(로/길/대로) 기반 상권 키 추출 =====
+function extractGuFromAddress(address) {
+  const a = normalizeStr(address);
+  const noParen = a.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const parts = noParen.split(/\s+/).filter(Boolean);
+  // "광주광역시 동구 ..." 형태에서 "동구"를 우선으로 잡음
+  const gu = parts.find((t) => /(구|군)$/.test(t));
+  return gu || "";
+}
+
+function roadKeyFromAddress(address) {
+  const a = normalizeStr(address);
+  const noParen = a.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const parts = noParen.split(/\s+/).filter(Boolean);
+  const road = parts.find((t) => /(로|길|대로)$/.test(t));
+  return road || "";
+}
+
+function roadAreaKeyFromAddress(address) {
+  const gu = extractGuFromAddress(address);
+  const road = roadKeyFromAddress(address);
+  if (gu && road) return `${gu} ${road}`;
+  if (road) return road;
+  if (gu) return gu;
+  return "";
+}
+
 function splitTagsFromScoreBy(scoreBy) {
   const menuRaw = normalizeStr(scoreBy?.menu_tags ?? scoreBy?.menuTags ?? "");
   const recoRaw = normalizeStr(scoreBy?.reco_tags ?? scoreBy?.recoTags ?? "");
@@ -739,6 +766,12 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
 
       const regionKey = classifyRegionKey({ region: r.region, address: r.address });
 
+      // ✅ 도로명(상권) 키
+      const guText = extractGuFromAddress(r.address);
+      const roadKey = roadKeyFromAddress(r.address);
+      const roadAreaKey = roadAreaKeyFromAddress(r.address);
+      const areaKind = roadKey ? "road" : guText ? "gu" : "other";
+
       // ✅ thumb 서버에서 정리 (file:// 차단)
       const thumbRaw = firstFromJsonArray(r.images_json);
       const thumb = sanitizeThumb(thumbRaw);
@@ -753,6 +786,10 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
         name: normalizeStr(r.name),
         region: regionKey,
         neighborhood: neighborhoodFromAddress(r.address),
+        road_key: roadKey,
+        road_area_key: roadAreaKey,
+        area_kind: areaKind,
+        gu_text: guText,
         score: Number(r.score_total || 0) || 0,
         rating: userRatingAvg,
         reviewCount: combinedReviewCount,

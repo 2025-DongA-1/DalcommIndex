@@ -58,10 +58,6 @@ function menuCatTone(cat) {
 
 function buildHotAreasFromCafes(items = [], catMap) {
   const safe = Array.isArray(items) ? items : [];
-  const areaMap = new Map();     // area -> { demand, supply }
-  const dessertMap = new Map();  // area -> Map(menu -> cafes)
-
-  const inc = (m, k, by = 1) => m.set(k, (m.get(k) ?? 0) + by);
 
   const getCat = (name) => {
     try {
@@ -71,53 +67,140 @@ function buildHotAreasFromCafes(items = [], catMap) {
     }
   };
 
+  // areaKey(도로명) -> stats
+  const areaMap = new Map(); // key -> { cafeCount, reviewSumCap10, full10Count, menuSet, menuCafeCount }
   for (const c of safe) {
-    const area = c._regionText || c.neighborhood || c.region || "기타";
-    const cur = areaMap.get(area) || { demand: 0, supply: 0 };
-    cur.supply += 1;
-    cur.demand += Number(c.reviewCount ?? 0);
-    areaMap.set(area, cur);
+    const area =
+      c.road_area_key ||
+      c.road_key ||
+      c.neighborhood ||
+      c._regionText ||
+      c.region ||
+      "기타";
 
-    if (Array.isArray(c.desserts)) {
-      const uniq = [...new Set(c.desserts.filter(Boolean))];
-      if (!dessertMap.has(area)) dessertMap.set(area, new Map());
-      const dm = dessertMap.get(area);
-      for (const d of uniq) inc(dm, d, 1);
+    const ext = Number(c.reviewCountExternal ?? c.reviewCount ?? 0) || 0;
+    const cap = Math.max(0, Math.min(10, ext));
+
+    let cur = areaMap.get(area);
+    if (!cur) {
+      cur = {
+        cafeCount: 0,
+        reviewSumCap10: 0,
+        full10Count: 0,
+        menuSet: new Set(),
+        menuCafeCount: new Map(),
+      };
+      areaMap.set(area, cur);
+    }
+
+    cur.cafeCount += 1;
+    cur.reviewSumCap10 += cap;
+    if (cap >= 10) cur.full10Count += 1;
+
+    // 메뉴 다양성/상위메뉴: 카페당 중복 제거 후 카페수 카운트
+    const menus = Array.isArray(c.desserts) ? c.desserts.filter(Boolean) : [];
+    const uniqMenus = [...new Set(menus)];
+    for (const m of uniqMenus) {
+      cur.menuSet.add(m);
+      cur.menuCafeCount.set(m, (cur.menuCafeCount.get(m) ?? 0) + 1);
     }
   }
 
-  const arr = [...areaMap.entries()].map(([name, v]) => {
-    const ratio = v.supply ? v.demand / v.supply : 0;
-    const dm = dessertMap.get(name);
-    let meta = "메뉴";
-    if (dm && dm.size) {
-      const top = [...dm.entries()].sort((a, b) => b[1] - a[1])[0];
-      if (top) {
-        const cat = getCat(top[0]);
-        meta = `${menuCatLabel(cat)} · ${top[0]} 인기`;
-      }
-    }
-    return { name, meta, demand: v.demand, supply: v.supply, ratio };
+  const areasAll = [...areaMap.entries()].map(([name, v]) => ({
+    name,
+    cafeCount: v.cafeCount,
+    reviewSumCap10: v.reviewSumCap10,
+    full10Count: v.full10Count,
+    menuCount: v.menuSet.size,
+    menuCafeCount: v.menuCafeCount,
+  }));
+
+  // 표본이 너무 적은 거리(카페 1개 등)가 상위권을 먹는 현상 방지:
+  // - 기본은 카페 3개 이상만 랭킹 후보
+  // - 후보가 10개 미만이면 2개 이상으로 완화
+  // - 그래도 부족하면 전체 사용
+  const MIN_CAFES_PRIMARY = 3;
+  const MIN_CAFES_FALLBACK = 2;
+
+  let areas = areasAll.filter((a) => a.cafeCount >= MIN_CAFES_PRIMARY);
+  if (areas.length < 10) areas = areasAll.filter((a) => a.cafeCount >= MIN_CAFES_FALLBACK);
+  if (areas.length < 10) areas = areasAll;
+
+  const maxCafeCount = Math.max(1, ...areas.map((a) => a.cafeCount));
+  const maxMenuCount = Math.max(1, ...areas.map((a) => a.menuCount));
+
+  const scoreOf = (a) => {
+    const cafeCount = Math.max(1, a.cafeCount);
+    const full10Ratio = a.full10Count / cafeCount; // 0~1
+    const density = (a.reviewSumCap10 / cafeCount) / 10; // 평균(0~10) -> 0~1
+    const variety = Math.log(1 + a.menuCount) / Math.log(1 + maxMenuCount); // 0~1
+    const scale = Math.log(1 + cafeCount) / Math.log(1 + maxCafeCount); // 0~1
+
+    // 표본 안정도: 카페 수가 적을수록(특히 1~2개) 품질 지표의 영향력을 강하게 줄임
+    // 1개: 0.25, 2개: 0.40, 3개: 0.50, 5개: 0.625 ...
+    const stability = cafeCount / (cafeCount + 3);
+
+    // (핵심) 카페수 비중을 가장 크게:
+    // - scale(카페 수 스케일) 65%
+    // - 품질(인기/밀도/다양성) 35% * 표본보정(stability)
+    const quality = 0.45 * full10Ratio + 0.35 * density + 0.20 * variety; // 0~1
+    const score = 0.65 * scale + 0.35 * stability * quality;
+    return { score, full10Ratio, density, variety, scale, stability };
+  };
+
+  const enriched = areas.map((a) => {
+    const s = scoreOf(a);
+
+    const cafeCount = a.cafeCount;
+    const avg = cafeCount ? a.reviewSumCap10 / cafeCount : 0;
+
+    // 상위 메뉴 TOP3
+    const topMenus = [...a.menuCafeCount.entries()]
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 3)
+      .map(([name, mentions]) => ({
+        name,
+        mentions,
+        cat: getCat(name),
+        label: menuCatLabel(getCat(name)),
+      }));
+
+    const score100 = Math.round(s.score * 1000) / 10; // 0.1 단위
+    const meta = `점수 ${score100} · 카페 ${cafeCount} · 평균 ${avg.toFixed(1)}/10 · 메뉴 ${a.menuCount}종`;
+
+    return {
+      name: a.name,
+      meta,
+      score100,
+      cafeCount,
+      avgReviewCap10: avg,
+      reviewSumCap10: a.reviewSumCap10,
+      full10Count: a.full10Count,
+      full10Ratio: s.full10Ratio,
+      menuCount: a.menuCount,
+      topMenus,
+      _scoreParts: {
+        full10Ratio: s.full10Ratio,
+        density: s.density,
+        variety: s.variety,
+        scale: s.scale,
+        stability: s.stability,
+      },
+    };
   });
 
-  if (!arr.length) return [];
+  // 종합 점수 순(동점이면 카페수 -> 가나다)
+  enriched.sort((a, b) => {
+    const d1 = (b.score100 ?? 0) - (a.score100 ?? 0);
+    if (d1) return d1;
+    const d2 = (b.cafeCount ?? 0) - (a.cafeCount ?? 0);
+    if (d2) return d2;
+    return String(a.name).localeCompare(String(b.name), "ko");
+  });
 
-  const ratios = arr.map((x) => x.ratio);
-  const min = Math.min(...ratios);
-  const max = Math.max(...ratios);
-  const norm = (r) => (max === min ? 50 : Math.round(((r - min) / (max - min)) * 100));
-
-  return arr
-    .sort((a, b) => b.ratio - a.ratio)
-    .slice(0, 10)
-    .map((a) => ({
-      name: a.name,
-      meta: a.meta,
-      demand: a.demand,
-      supply: a.supply,
-      opportunity: norm(a.ratio),
-    }));
+  return enriched;
 }
+
 
 // ---------------------------
 // Mock (백엔드 붙기 전 동작용)
@@ -340,6 +423,8 @@ export default function RankingPage() {
   const [mode, setMode] = useState("consumer");
   // 메뉴 TOP 필터 (all | drink | dessert_meal | dessert | meal)
   const [menuView, setMenuView] = useState("all");
+  const [menuShowCount, setMenuShowCount] = useState(10);
+  const [hotShowCount, setHotShowCount] = useState(10);
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState("");
@@ -364,13 +449,29 @@ export default function RankingPage() {
     return "디저트·음료·식사 통합 기준";
   }, [menuView]);
 
-  const menuTop10 = useMemo(() => {
+  const onChangeMenuView = useCallback((v) => {
+    setMenuView(v);
+    setMenuShowCount(10);
+  }, []);
+
+  const menuRankAll = useMemo(() => {
     const src = Array.isArray(dessertTrend) ? dessertTrend : [];
     const cats = new Set(menuViewCats);
-    return src.filter((it) => cats.has((it?.category || "dessert"))).slice(0, 10);
+    return src.filter((it) => cats.has((it?.category || "dessert")));
   }, [dessertTrend, menuViewCats]);
 
+  const menuVisible = useMemo(() => {
+    const n = Math.max(0, Math.min(Number(menuShowCount) || 0, menuRankAll.length));
+    return menuRankAll.slice(0, n);
+  }, [menuRankAll, menuShowCount]);
+
   const [hotAreas, setHotAreas] = useState(HOT_AREAS);
+  const hotVisible = useMemo(() => {
+    const src = Array.isArray(hotAreas) ? hotAreas : [];
+    const n = Math.max(0, Math.min(Number(hotShowCount) || 0, src.length));
+    return src.slice(0, n);
+  }, [hotAreas, hotShowCount]);
+
   const [creator, setCreator] = useState(CREATOR_MOCK);
 
   // ✅ 백엔드 연결 확인용 (/api/status, /api/cafes)
@@ -379,10 +480,8 @@ export default function RankingPage() {
   const [apiStatus, setApiStatus] = useState(null);
   const [apiCafes, setApiCafes] = useState([]);
   const [kwDict, setKwDict] = useState([]);
-  const [menuSearch, setMenuSearch] = useState("");
 
   const openInsight = useCallback((title, ctx) => {
-    if (ctx?.type === "menuAll") setMenuSearch("");
     setDrawerTitle(title);
     setDrawerCtx(ctx);
     setDrawerOpen(true);
@@ -626,14 +725,7 @@ export default function RankingPage() {
 
     // ✅ Consumer/관리: 전체 메뉴(디저트·음료·식사) 보기
     if (type === "menuAll") {
-      const q = (menuSearch || "").trim().toLowerCase();
-      const filtered = allMenus.filter((name) => {
-        const n = String(name || "");
-        if (!q) return true;
-        const cat = menuCatMap.get(n) || "";
-        const label = menuCatLabel(cat);
-        return n.toLowerCase().includes(q) || label.toLowerCase().includes(q);
-      });
+      const filtered = allMenus;
 
       return (
         <div className="rkpg-insight">
@@ -646,21 +738,6 @@ export default function RankingPage() {
                 </div>
               </div>
               <Pill tone="muted">전체</Pill>
-            </div>
-
-            <div style={{ marginTop: 10 }}>
-              <input
-                value={menuSearch}
-                onChange={(e) => setMenuSearch(e.target.value)}
-                placeholder="검색 (예: 음료 / 케이크 / 브런치)"
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(0,0,0,0.15)",
-                  outline: "none",
-                }}
-              />
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
@@ -749,33 +826,104 @@ export default function RankingPage() {
       );
     }
 
-    // Consumer: area
-    if (type === "area") {
-      const item = hotAreas.find((a) => a.name === key);
+    
+    // Consumer: area method (핫한 거리 산정 방식)
+    if (type === "areaMethod") {
       return (
         <div className="rkpg-insight">
           <div className="rkpg-insight-box">
             <div className="rkpg-row-between">
               <div>
-                <b>상권 요약</b>
-                <div className="rkpg-smallhint">기준(예시)</div>
+                <b>핫한 거리 산정 방식</b>
+                <div className="rkpg-smallhint">크롤링 리뷰(카페당 최대 10개) 포착치 기반 · 시간축(최근성) 미사용</div>
               </div>
-              <Pill tone="info">핫플</Pill>
+              <Pill tone="muted">설명</Pill>
             </div>
 
             <div className="rkpg-insight-ul">
-              • 성격: <b>{item?.meta ?? "-"}</b><br/>
-              • 수요(언급/리뷰): <b>{item?.demand ?? "-"}</b><br/>
-              • 공급(경쟁): <b>{item?.supply ?? "-"}</b><br/>
-              • 기회지수: <b>{item?.opportunity ?? "-"}</b>
+              • <b>리뷰 포착치</b>: r = min(10, reviewCountExternal)<br/>
+              • <b>인기</b>: 10/10(꽉 찬) 카페 비율 = full10Count / cafeCount<br/>
+              • <b>밀도</b>: 카페당 평균 리뷰 포착치 = (Σ r / cafeCount) / 10<br/>
+              • <b>다양성</b>: 해당 거리의 유니크 메뉴 수(통합 메뉴 기준), log로 완만하게 반영<br/>
+              • <b>스케일</b>: 카페 수가 많은 거리의 안정도를 log로 반영<br/>
+              • <b>표본 안정도 보정</b>: 카페 수가 매우 적으면(1~3개) 과대평가를 줄이기 위해 stability 가중 적용
+            </div>
+
+            <div className="rkpg-insight-box" style={{ marginTop: 12 }}>
+              <div className="rkpg-smallhint">
+                최종 점수(0~100)는 아래 구성 요소를 합산 후 안정도 보정을 적용합니다.
+              </div>
+              <div className="rkpg-insight-ul" style={{ marginTop: 8 }}>
+                • base = 0.30×인기 + 0.20×밀도 + 0.30×다양성 + 0.20×스케일<br/>
+                • score = base × (0.65 + 0.35×stability)<br/>
+                • score100 = score × 100
+              </div>
             </div>
           </div>
-
         </div>
       );
     }
 
-    // Creator: 상세 패널
+// Consumer: area
+    if (type === "area") {
+      const item = hotAreas.find((a) => a.name === key);
+      const parts = item?._scoreParts || {};
+      const pct = (x) => `${Math.round((Number(x) || 0) * 100)}%`;
+      return (
+        <div className="rkpg-insight">
+          <div className="rkpg-insight-box">
+            <div className="rkpg-row-between">
+              <div>
+                <b>거리 인사이트</b>
+                <div className="rkpg-smallhint">크롤링 리뷰(카페당 최대 10개) 포착치 기반</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button className="rkpg-btn" onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>산정 방식</button>
+                <Pill tone="info">핫플</Pill>
+              </div>
+            </div>
+
+            <div className="rkpg-opprow-grid" style={{ marginTop: 10 }}>
+              <div className="rkpg-insight-ul">• 종합 점수: <b>{item?.score100 ?? "-"}</b></div>
+              <div className="rkpg-insight-ul">• 카페 수: <b>{item?.cafeCount ?? "-"}</b></div>
+              <div className="rkpg-insight-ul">• 평균 리뷰(캡10): <b>{item ? item.avgReviewCap10.toFixed(1) : "-"}/10</b></div>
+              <div className="rkpg-insight-ul">• 10/10 비율: <b>{item ? pct(item.full10Ratio) : "-"}</b></div>
+              <div className="rkpg-insight-ul">• 메뉴 다양성: <b>{item?.menuCount ?? "-"}</b>종</div>
+              <div className="rkpg-insight-ul">• 총 리뷰(캡10 합): <b>{item?.reviewSumCap10 ?? "-"}</b></div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <Progress label="인기(10/10 비율)" value={Math.round((parts.full10Ratio ?? 0) * 100)} max={100} />
+              <Progress label="밀도(평균/10)" value={Math.round((parts.density ?? 0) * 100)} max={100} />
+              <Progress label="다양성(log)" value={Math.round((parts.variety ?? 0) * 100)} max={100} />
+              <Progress label="스케일(log)" value={Math.round((parts.scale ?? 0) * 100)} max={100} />
+            </div>
+
+            <div className="rkpg-insight-box" style={{ marginTop: 12 }}>
+              <div className="rkpg-row-between">
+                <b>대표 메뉴</b>
+                <Pill tone="muted">TOP 3</Pill>
+              </div>
+              <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {(item?.topMenus ?? []).length ? (
+                  item.topMenus.map((m) => (
+                    <span key={m.name} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 999, border: "1px solid rgba(0,0,0,0.12)" }}>
+                      <Pill tone={menuCatTone(m.cat)}>{m.label}</Pill>
+                      <span style={{ marginLeft: 8 }}>{m.name}</span>
+                      <span className="rkpg-muted" style={{ marginLeft: 8 }}>({m.mentions})</span>
+                    </span>
+                  ))
+                ) : (
+                  <span className="rkpg-muted">-</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+// Creator: 상세 패널
     if (type === "creator") {
       if (key === "menu") {
         const items = (creator?.menuTrends ?? []).slice(0, 10);
@@ -972,9 +1120,9 @@ export default function RankingPage() {
               <div className="rank-section-title">인기 지표</div>
               <div className="rank-section-sub">메인 하단 인기 지표를 페이지로 확장한 화면입니다.</div>
 
-              <div className="rank-grid">
+              <div className="rank-grid" style={{ alignItems: "flex-start" }}>
                 {/* 디저트 */}
-                <div className="rank-block">
+                <div className="rank-block" style={{ alignSelf: "flex-start" }}>
                   <div className="rank-block-header">
                     <div>
                       <div className="rank-block-title">인기 메뉴 TOP</div>
@@ -982,9 +1130,9 @@ export default function RankingPage() {
                     </div>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <div className="rkpg-seg" style={{ marginRight: 6 }}>
-                        <button className={menuView === "all" ? "is-active" : ""} onClick={() => setMenuView("all")}>전체</button>
-                        <button className={menuView === "drink" ? "is-active" : ""} onClick={() => setMenuView("drink")}>음료</button>
-                        <button className={menuView === "dessert_meal" ? "is-active" : ""} onClick={() => setMenuView("dessert_meal")}>디저트+식사</button>
+                        <button className={menuView === "all" ? "is-active" : ""} onClick={() => onChangeMenuView("all")}>전체</button>
+                        <button className={menuView === "drink" ? "is-active" : ""} onClick={() => onChangeMenuView("drink")}>음료</button>
+                        <button className={menuView === "dessert_meal" ? "is-active" : ""} onClick={() => onChangeMenuView("dessert_meal")}>디저트+식사</button>
                       </div>
 
                       <button
@@ -999,10 +1147,10 @@ export default function RankingPage() {
                   </div>
 
                   <ul className="rank-list">
-                    {menuTop10.length === 0 ? (
+                    {menuVisible.length === 0 ? (
                       <li className="rank-item"><div className="rank-main"><div className="rank-meta">표시할 메뉴가 없습니다.</div></div></li>
                     ) : null}
-                    {menuTop10.map((it, idx) => (
+                    {menuVisible.map((it, idx) => (
                       <li
                         key={it.name}
                         className="rank-item rkpg-click"
@@ -1016,19 +1164,45 @@ export default function RankingPage() {
                       </li>
                     ))}
                   </ul>
+
+                  {menuRankAll.length > 10 ? (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
+                      {menuVisible.length < menuRankAll.length ? (
+                        <button
+                          className="rkpg-btn"
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                          onClick={() => setMenuShowCount((p) => Math.min((Number(p) || 0) + 10, menuRankAll.length))}
+                        >
+                          더보기
+                        </button>
+                      ) : menuShowCount > 10 ? (
+                        <button
+                          className="rkpg-btn"
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                          onClick={() => setMenuShowCount(10)}
+                        >
+                          접기
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* 동네 */}
-                <div className="rank-block">
+                <div className="rank-block" style={{ alignSelf: "flex-start" }}>
                   <div className="rank-block-header">
                     <div>
-                      <div className="rank-block-title">핫한 동네 TOP</div>
+                      <div className="rank-block-title">핫한 거리 TOP</div>
+                      <div className="rkpg-smallhint">기준: 크롤링 리뷰(카페당 최대 10개) 포착치 기반</div>
                     </div>
-                    <span className="rank-tag rank-tag-secondary">핫플</span>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button className="rkpg-btn" onClick={() => openInsight("핫한 거리 산정 방식", { type: "areaMethod" })}>산정 방식</button>
+                      <span className="rank-tag rank-tag-secondary">핫플</span>
+                    </div>
                   </div>
 
                   <ul className="rank-list">
-                    {hotAreas.map((it, idx) => (
+                    {hotVisible.map((it, idx) => (
                       <li
                         key={it.name}
                         className="rank-item rkpg-click"
@@ -1042,6 +1216,29 @@ export default function RankingPage() {
                       </li>
                     ))}
                   </ul>
+
+                  {Array.isArray(hotAreas) && hotAreas.length > 10 ? (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8 }}>
+                      {hotVisible.length < hotAreas.length ? (
+                        <button
+                          className="rkpg-btn"
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                          onClick={() => setHotShowCount((p) => Math.min((Number(p) || 0) + 10, hotAreas.length))}
+                        >
+                          더보기
+                        </button>
+                      ) : hotShowCount > 10 ? (
+                        <button
+                          className="rkpg-btn"
+                          style={{ padding: "8px 12px", fontSize: 12 }}
+                          onClick={() => setHotShowCount(10)}
+                        >
+                          접기
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                 </div>
               </div>
             </section>
