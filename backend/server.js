@@ -479,6 +479,23 @@ function neighborhoodFromAddress(address) {
 }
 
 // ===== 도로명(로/길/대로) 기반 상권 키 추출 =====
+function extractSiDoFromAddress(address) {
+  const a = normalizeStr(address);
+  const noParen = a.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  const parts = noParen.split(/\s+/).filter(Boolean);
+
+  // 가장 우선: '광주광역시', '전라남도' 같은 토큰이 그대로 들어있는 경우
+  const sidoToken = parts.find((t) => /(특별시|광역시|특별자치시|자치시|도)$/.test(t) || /시$/.test(t) || /도$/.test(t));
+  if (sidoToken) return sidoToken;
+
+  // 축약/변형 표기 보정(프로젝트 범위: 광주/전남)
+  if (noParen.includes("광주")) return "광주광역시";
+  if (noParen.includes("전라남도") || noParen.includes("전남")) return "전라남도";
+  if (noParen.includes("전라북도") || noParen.includes("전북")) return "전라북도";
+
+  return "";
+}
+
 function extractGuFromAddress(address) {
   const a = normalizeStr(address);
   const noParen = a.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
@@ -497,11 +514,18 @@ function roadKeyFromAddress(address) {
 }
 
 function roadAreaKeyFromAddress(address) {
+  const sido = extractSiDoFromAddress(address);
   const gu = extractGuFromAddress(address);
   const road = roadKeyFromAddress(address);
+
+  // 일관성 목표: 가능한 한 "시/도 + 구/군 + 도로명" 형태로
+  if (sido && gu && road) return `${sido} ${gu} ${road}`;
+  if (sido && road) return `${sido} ${road}`;
   if (gu && road) return `${gu} ${road}`;
+  if (sido && gu) return `${sido} ${gu}`;
   if (road) return road;
   if (gu) return gu;
+  if (sido) return sido;
   return "";
 }
 
@@ -767,6 +791,7 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const regionKey = classifyRegionKey({ region: r.region, address: r.address });
 
       // ✅ 도로명(상권) 키
+      const sidoText = extractSiDoFromAddress(r.address);
       const guText = extractGuFromAddress(r.address);
       const roadKey = roadKeyFromAddress(r.address);
       const roadAreaKey = roadAreaKeyFromAddress(r.address);
@@ -788,6 +813,7 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
         neighborhood: neighborhoodFromAddress(r.address),
         road_key: roadKey,
         road_area_key: roadAreaKey,
+        sido_text: sidoText,
         area_kind: areaKind,
         gu_text: guText,
         score: Number(r.score_total || 0) || 0,
