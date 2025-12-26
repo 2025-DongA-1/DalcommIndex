@@ -565,7 +565,7 @@ export default function Main() {
       {
         key: "road",
         kicker: "오늘의 탐방 코스",
-        title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle}로 카페 탐방` : "오늘은 어디로 갈까?",
+        title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle} 카페 탐방` : "오늘은 어디로 갈까?",
         sub: "최근 언급/다양성이 높은 거리 기반",
         cta: "거리 카페 보기 →",
         onViewAll: () =>
