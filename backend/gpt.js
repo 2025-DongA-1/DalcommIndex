@@ -1,14 +1,10 @@
-// gpt.js  (※ 파일명 유지)
+// gpt.js
 import "dotenv/config";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
-// OpenAI 호출 토글
-// - OPENAI_ENABLED=0  : OpenAI 호출 전부 비활성화(규칙 기반 + 템플릿만 사용)
-// - OPENAI_PREFS=1    : 선호도 추출도 OpenAI 사용(기본값 0 → 비용 절감 / 1회 호출 유지)
-// - OPENAI_REPLY=0    : 자연어 설명 생성도 OpenAI 비활성화(기본값 1)
 const OPENAI_ENABLED = process.env.OPENAI_ENABLED !== "0";
 const OPENAI_PREFS = process.env.OPENAI_PREFS === "1";
 const OPENAI_REPLY = process.env.OPENAI_REPLY !== "0";
@@ -25,40 +21,36 @@ function heuristicPreferences(userMessage) {
     menu: [],
     required: [],
     minSentiment: 0,
+    target: null, 
+    intent: "recommendation" 
   };
 
-  // ✅ 지역 (표준 코드로 통일: jangseong / hwasun)
   if (/(광주|광주광역시)/.test(text)) prefs.region.push("gwangju");
   if (/나주/.test(text)) prefs.region.push("naju");
   if (/담양/.test(text)) prefs.region.push("damyang");
   if (/장성/.test(text)) prefs.region.push("jangseong");
   if (/화순/.test(text)) prefs.region.push("hwasun");
 
-  // 분위기
   if (/(조용|차분|한적|심플|미니멀)/.test(text)) prefs.atmosphere.push("조용한");
   if (/(감성|감각|아늑|풍미|전통|차분|유럽|무드|모던|잔잔|한옥|미니멀|기와)/.test(text)) prefs.atmosphere.push("감성");
   if (/(편안|포근|상큼|따뜻하다|묵직|한적|안락)/.test(text)) prefs.atmosphere.push("편안한");
   if (/(뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("뷰");
   if (/(포토존|뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("사진");
 
-  // 메뉴
-  if (/(아메리카노|말차|카라멜|라떼|카페라떼|에이드|바닐라빈|밀크티|에스프레소|파르페|카카오파르페|콜드브루|밀크|다크|딸기라떼)/.test(text)) prefs.taste.push("커피");
-  if (/(디저트|케이크|버터|마들렌|쿠키|샌드위치|아이스크림|소금|샐러드|빙수|팥빙수| 바닐라|휘낭시에|식빵|파이|카다이프|타르트|푸딩|토스트|티라미수|베이글|브라우니|잠봉뵈르|크루아상|스콘|와플|젤라또|치즈|치즈케이크|팬케이크|애플파이|컵케이크|쫀득쿠키|버터바|에그타르트|크로플|롤케이크|쫀득모찌빵|카타이프)/.test(text)) prefs.taste.push("디저트");
+  if (/(아메리카노|말차|카라멜|라떼|카페라떼|에이드|바닐라빈|밀크티|에스프레소|파르페|콜드브루|딸기라떼)/.test(text)) prefs.taste.push("커피");
+  if (/(디저트|케이크|버터|마들렌|쿠키|샌드위치|아이스크림|소금|샐러드|빙수|팥빙수|바닐라|휘낭시에|식빵|파이|타르트|푸딩|토스트|티라미수|베이글|브라우니|잠봉뵈르|크루아상|스콘|와플|젤라또|치즈|팬케이크|에그타르트|크로플|롤케이크)/.test(text)) prefs.taste.push("디저트");
   if (/(브런치|피자|파스타|스테이크|파니니|포케)/.test(text)) prefs.taste.push("브런치");
 
-  // 목적 (공부/작업 분리해서 둘 다 유지)
   if (/(데이트|연인|커플)/.test(text)) prefs.purpose.push("데이트");
   if (/(공부)/.test(text)) prefs.purpose.push("공부");
   if (/(작업|노트북|혼자)/.test(text)) prefs.purpose.push("작업");
   if (/(가족|아기|아이|부모|키즈|어린이|유모차)/.test(text)) prefs.purpose.push("가족");
   if (/(수다|모임)/.test(text)) prefs.purpose.push("모임");
 
-  // 맛
   if (/(달콤|달달하다|단맛)/.test(text)) prefs.purpose.push("달달");
   if (/(짭짤|쌉싸름|쓴맛)/.test(text)) prefs.purpose.push("씁쓸");
   if (/(고소|담백)/.test(text)) prefs.purpose.push("고소");
 
-  // 필수조건
   if (/주차/.test(text)) prefs.required.push("주차 가능");
   if (/(조용한 곳만|진짜 조용|완전 조용)/.test(text)) {
     prefs.required.push("조용한");
@@ -67,7 +59,12 @@ function heuristicPreferences(userMessage) {
 
   if (/(맛집|진짜 맛있|후기 좋은|평가 좋은|실패 없는)/.test(text)) prefs.minSentiment = 70;
 
-  // 중복 제거
+  if (/(비교|차이|vs)/i.test(text)) {
+    prefs.intent = "comparison";
+  } else if (/(알려줘|어때|상세|자세히|정보|소개)/.test(text)) {
+    prefs.intent = "detail";
+  }
+
   prefs.region = [...new Set(prefs.region)];
   prefs.atmosphere = [...new Set(prefs.atmosphere)];
   prefs.taste = [...new Set(prefs.taste)];
@@ -80,30 +77,6 @@ function heuristicPreferences(userMessage) {
 
 function mergeArr(a = [], b = []) {
   return Array.from(new Set([...a, ...b]));
-}
-
-function hasAny(v) {
-  return Array.isArray(v) && v.length > 0;
-}
-
-// ✅ 연속 대화에서 부족한 조건을 채우기 위한 “후속 질문”
-export function buildFollowUpQuestion(prefs) {
-  const p = prefs && typeof prefs === "object" ? prefs : {};
-
-  const region = hasAny(p.region);
-  const purpose = hasAny(p.purpose);
-  const atmos = hasAny(p.atmosphere);
-  const taste = hasAny(p.taste);
-  const menu = hasAny(p.menu);
-  const required = hasAny(p.required);
-
-  if (!region) return "어느 지역을 원하세요? (광주 / 나주 / 담양 / 화순)";
-  if (!purpose && !atmos) return "어떤 느낌으로 찾으세요? (공부/작업 / 데이트 / 조용한 / 감성 / 뷰)";
-  if (!purpose) return "방문 목적이 있으세요? (공부/작업 / 데이트 / 수다 / 가족)";
-  if (!atmos) return "원하시는 분위기를 알려주실까요? (조용한 / 감성 / 뷰)";
-  if (!menu && !taste) return "원하시는 메뉴/디저트가 있나요? (케이크 / 소금빵 / 크로플 / 휘낭시에)";
-  if (!required) return "주차 같은 필수 조건이 있나요? (주차 필요 / 상관없음)";
-  return null;
 }
 
 async function openaiChat({ messages, temperature = 0.2, max_completion_tokens = 512, response_format }) {
@@ -136,25 +109,19 @@ async function openaiChat({ messages, temperature = 0.2, max_completion_tokens =
   return data?.choices?.[0]?.message?.content?.trim() || "";
 }
 
-/**
- * 1) OpenAI + 규칙 기반으로 선호도(JSON) 추출
- */
 export async function extractPreferences(userMessage) {
   const heur = heuristicPreferences(userMessage);
 
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_PREFS) return heur;
 
   const prompt = `
-사용자의 문장을 보고, 카페 추천 조건을 아래 JSON 형식으로만 추출해줘.
-반드시 JSON만 출력하고, 다른 문장은 절대 쓰지 마.
+사용자의 문장을 분석해 카페 추천 조건을 JSON으로 추출해줘.
+JSON만 출력하고 다른 말은 하지 마.
 
-필드:
-- region: ["gwangju","naju","damyang","jangseong","hwasun"] 중 해당되는 것만, 없으면 []
-- atmosphere: 분위기 키워드 (예: "조용한","감성","사진","뷰")
-- taste: 맛/카테고리 키워드 (예: "달콤", "담백", "고소", "쓴맛")
-- purpose: 목적 키워드 (예: "데이트","공부","작업","수다","가족")
-- menu: 메뉴명 (예: "커피","디저트","빵","브런치", "소금빵","블루베리케이크")
-- required: 필수조건 (예: "주차 가능","조용한")
+필드 설명:
+- target: (문자열) 사용자가 특정 카페 이름을 언급했다면 그 이름을 적어 (없으면 null). 예: "라라브레드", "담다"
+- intent: (문자열) "recommendation" (추천요청), "detail" (특정카페 상세정보/알려줘), "comparison" (비교) 중 하나.
+- region, atmosphere, taste, purpose, menu, required: 기존과 동일.
 - minSentiment: 0~100 숫자
 
 사용자 문장:
@@ -166,7 +133,7 @@ export async function extractPreferences(userMessage) {
     try {
       text = await openaiChat({
         messages: [
-          { role: "system", content: "You extract structured JSON for cafe recommendation preferences." },
+          { role: "system", content: "You extract structured JSON including 'target' and 'intent'." },
           { role: "user", content: prompt },
         ],
         temperature: 0.0,
@@ -176,7 +143,7 @@ export async function extractPreferences(userMessage) {
     } catch (e) {
       text = await openaiChat({
         messages: [
-          { role: "system", content: "You extract structured JSON for cafe recommendation preferences." },
+          { role: "system", content: "You extract structured JSON including 'target' and 'intent'." },
           { role: "user", content: prompt },
         ],
         temperature: 0.0,
@@ -199,6 +166,8 @@ export async function extractPreferences(userMessage) {
       menu: Array.isArray(obj.menu) ? obj.menu : [],
       required: Array.isArray(obj.required) ? obj.required : [],
       minSentiment: typeof obj.minSentiment === "number" ? Math.max(0, Math.min(obj.minSentiment, 100)) : 0,
+      target: obj.target || null,
+      intent: obj.intent || "recommendation"
     };
 
     return {
@@ -209,6 +178,8 @@ export async function extractPreferences(userMessage) {
       menu: mergeArr(heur.menu, llm.menu),
       required: mergeArr(heur.required, llm.required),
       minSentiment: Math.max(heur.minSentiment || 0, llm.minSentiment || 0),
+      target: llm.target || heur.target,
+      intent: llm.intent || heur.intent
     };
   } catch (err) {
     console.warn("[openai] prefs 추출 실패, 규칙 기반만 사용:", err?.message || err);
@@ -218,7 +189,10 @@ export async function extractPreferences(userMessage) {
 
 function formatKeywordHits(hits) {
   if (!Array.isArray(hits) || hits.length === 0) return "";
-  return hits.map((h) => `${h.label}(${h.count})`).join(", ");
+  return hits
+    .filter(h => h && typeof h === 'object') 
+    .map((h) => `${h.label}(${h.count})`)
+    .join(", ");
 }
 
 function formatMatchSummary(cafe) {
@@ -226,92 +200,198 @@ function formatMatchSummary(cafe) {
   const parts = [];
 
   if (Array.isArray(m.atmosphere) && m.atmosphere.length) parts.push(`분위기: ${m.atmosphere.join(", ")}`);
-  if (Array.isArray(m.purpose) && m.purpose.length) parts.push(`목적: ${m.purpose.join(", ")}`);
-  if (Array.isArray(m.taste) && m.taste.length) parts.push(`맛/카테고리: ${m.taste.join(", ")}`);
-
+  
   const kh = formatKeywordHits(cafe?.keyword_hits || m.keyword_hits);
-  if (kh) parts.push(`리뷰 언급: ${kh}`);
-
-  if (typeof cafe?.parking === "string" && cafe.parking && cafe.parking !== "정보 없음") parts.push(`주차: ${cafe.parking}`);
+  if (kh) parts.push(`키워드: ${kh}`);
 
   return parts.join(" / ");
 }
 
 /**
- * 2) 추천 결과를 자연어 설명으로 생성 (+ 부족한 조건에 대한 후속 질문 1개 자동 부착)
+ * 2) 추천 결과를 자연어 설명으로 생성
  */
 export async function generateRecommendationMessage(userMessage, prefs, results) {
-  const followUp = buildFollowUpQuestion(prefs);
-
   if (!results || results.length === 0) {
-    const base = "조건에 맞는 카페를 찾지 못했어요. 조건을 조금 바꿔서 다시 말씀해 주세요.";
-    return followUp ? `${base}\n\n${followUp}` : base;
+    return "요청하신 카페 정보를 찾지 못했어요. 이름을 다시 확인해주시거나 다른 조건을 말씀해 주세요.";
   }
 
-  // ✅ OpenAI 비활성/쿼터 문제에서도 “키워드 언급 근거”가 보이도록 fallback 강화
+  // OpenAI 비활성 시 fallback
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_REPLY) {
     const lines = results.map((c, i) => {
       const reason = formatMatchSummary(c);
       return `${i + 1}. ${c.name}${c.address ? ` (${c.address})` : ""}${reason ? `\n   - ${reason}` : ""}`;
     });
-    const base = `요청하신 조건과 “리뷰 키워드 언급량”을 기준으로 추천드려요.\n\n${lines.join("\n")}`;
-    return followUp ? `${base}\n\n${followUp}` : base;
+    return `검색 결과입니다.\n\n${lines.join("\n")}`;
   }
 
-  const simpleResults = results.map((cafe) => ({
-    name: cafe.name,
-    region: cafe.region,
-    address: cafe.address,
-    score: cafe.score,
-    atmosphere: cafe.atmosphere || cafe.atmosphere_norm || "",
-    taste: cafe.taste || cafe.taste_norm || "",
-    purpose: cafe.purpose || cafe.purpose_norm || "",
-    menu: cafe.menu || "",
-    main_dessert: cafe.main_dessert || "",
-    main_coffee: cafe.main_coffee || "",
-    parking: cafe.parking || "",
-    summary: cafe.summary || "",
-    // ✅ 근거(모델이 “왜 추천인지”를 말로 풀 수 있게)
-    why: Array.isArray(cafe.keyword_hits)
-      ? cafe.keyword_hits.map((h) => h?.text).filter(Boolean).slice(0, 3)
-      : (Array.isArray(cafe.why) ? cafe.why.slice(0, 3) : []),
-  }));
+  const STOP_WORDS = [
+    "카페", "디저트", "맛집", "커피", "음료", "광주", "전남", "담양", "나주", "화순", "장성", 
+    "추천", "방문", "핫플", "공간", "곳", "분위기", "가게", "식당", "운영", "메뉴", "준비"
+  ];
 
+  let simpleResults = [];
+  try {
+    simpleResults = results.map((cafe) => {
+      let hits = [];
+      
+      // 1. 실제 빈도수 데이터(keyword_counts_json) 파싱 시도
+      if (cafe.keyword_counts_json) {
+         try {
+           const parsed = JSON.parse(cafe.keyword_counts_json);
+           if (Array.isArray(parsed)) {
+             // 형식: [["키워드", 10], ...] 또는 [{text:"키워드", value:10}, ...]
+             hits = parsed.map(p => {
+               if (Array.isArray(p)) return { label: p[0], count: p[1] };
+               return { label: p.text || p.keyword, count: p.value || p.count };
+             });
+           } else if (typeof parsed === 'object') {
+             // 형식: {"키워드": 10, ...}
+             hits = Object.entries(parsed).map(([k,v]) => ({ label: k, count: v }));
+           }
+         } catch(e) { /* 파싱 실패 시 무시 */ }
+      }
+
+      // 2. 만약 실제 빈도수가 없으면, 단순 키워드 목록(keyword_hits or keywords)을 사용하여 가상의 빈도수 생성 (Fallback)
+      //    (예: 첫 번째 키워드=10회, 두 번째=9회 ... 순서가 중요도이므로)
+      const hasRealCounts = hits.some(h => h.count > 0);
+      if (!hasRealCounts) {
+         const fallbackSource = (Array.isArray(cafe.keyword_hits) && cafe.keyword_hits.length > 0)
+            ? cafe.keyword_hits
+            : (Array.isArray(cafe.keywords) ? cafe.keywords : []);
+            
+         hits = fallbackSource.map((k, idx) => {
+             const label = (typeof k === 'string') ? k : (k.label || k.text || "");
+             // 순위 기반 가상 카운트 (최대 15회 ~ 최소 5회)
+             const fakeCount = Math.max(5, 15 - idx); 
+             return { label, count: fakeCount };
+         });
+      }
+
+      // 3. 데이터 병합 (hits가 우선)
+      const keys = Array.isArray(cafe.keywords) ? cafe.keywords : [];
+      // keys에 있는 것들도 일단 후보로 넣되, count가 0이면 아래 로직에서 무시되거나 낮은 점수
+      const rawList = [...hits, ...keys.map(k => ({ label: k, count: 0 }))]; 
+
+      // 4. 데이터 정규화 및 불용어 처리
+      const normalized = rawList.map(h => {
+        if (!h) return { label: "", count: 0 };
+        const label = h.label || h.text || h.keyword || (typeof h === 'string' ? h : "");
+        const count = Number(h.count || h.value || 0);
+        return { label, count };
+      });
+
+      const uniqueMap = new Map();
+      normalized.forEach(item => {
+        if (item.label && !STOP_WORDS.includes(item.label)) {
+          const existing = uniqueMap.get(item.label);
+          // 기존 것보다 count가 높으면 갱신
+          if (!existing || item.count > existing.count) {
+            uniqueMap.set(item.label, item);
+          }
+        }
+      });
+      
+      // 5. 상위 키워드 추출 (이제 count가 무조건 있음)
+      const sortedKeywords = Array.from(uniqueMap.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5)
+        .map(item => {
+          return item.count > 0 ? `'${item.label}'(${item.count}회)` : `'${item.label}'`;
+        });
+
+      // 키워드가 없으면 기본 태그로 대체
+      if (sortedKeywords.length === 0) {
+         const features = [...(Array.isArray(cafe.atmosphere) ? cafe.atmosphere : []), ...(Array.isArray(cafe.taste) ? cafe.taste : [])];
+         const safeFeatures = features.filter(f => !STOP_WORDS.includes(f)).slice(0, 3);
+         if (safeFeatures.length > 0) sortedKeywords.push(...safeFeatures.map(f => `'${f}'`));
+         else sortedKeywords.push("'인기 있는'");
+      }
+
+      const ensureArray = (arr) => Array.isArray(arr) ? arr : [];
+
+      return {
+        name: cafe.name,
+        why: sortedKeywords.join(", "), 
+        atmosphere: ensureArray(cafe.atmosphere).join(", "),
+        menu: ensureArray(cafe.menu).slice(0, 5).join(", ")
+      };
+    });
+  } catch (mapErr) {
+    console.error("[generateRecommendationMessage] Data mapping error:", mapErr);
+    const lines = results.map((c, i) => `${i + 1}. ${c.name}`);
+    return `데이터를 정리하는 중 문제가 발생했어요. 목록만 먼저 보여드릴게요.\n\n${lines.join("\n")}`;
+  }
+
+  const targetName = prefs?.target || simpleResults.find(r => userMessage.includes(r.name))?.name;
+  
+  let currentIntent = "recommendation";
+  if (userMessage.includes("비교") || userMessage.includes("차이")) currentIntent = "comparison";
+  else if (targetName && simpleResults.length > 0) currentIntent = "detail";
+
+  // 🔥 [수정] 프롬프트에서 빈도수 언급 강제
   const prompt = `
-너는 광주/전남 디저트 카페 추천 챗봇이야.
+너는 광주/전남 디저트 카페 전문 챗봇이야.
+사용자의 요청과 제공된 데이터를 바탕으로 답변을 작성해.
 
-사용자의 요청:
-${userMessage}
+[사용자 요청]
+"${userMessage}"
 
-추출된 선호도(JSON):
-${JSON.stringify(prefs, null, 2)}
-
-추천된 카페 목록(JSON, score 내림차순):
+[데이터]
 ${JSON.stringify(simpleResults, null, 2)}
 
-위 정보를 바탕으로, 한국어 존댓말로 1~3문단 정도로 자연스럽게 설명해줘.
-- 맨 앞에 "다음 카페들을 추천드릴게요."로 시작
-- 반드시 추천 근거를 포함해: match / keyword_hits(리뷰 언급량) 중 적어도 1개는 언급
-- 마지막에 질문(후속 질문)은 넣지 마 (질문은 서버가 별도로 붙일 거야)
+[작성 지침]
+현재 모드: **${currentIntent}**
+
+1. **Detail 모드 (특정 카페 상세 설명)**:
+   - 사용자가 궁금해하는 카페("${targetName || '첫 번째 카페'}")에 대해 집중적으로 설명해.
+   - 데이터에 있는 **키워드(why)**, **분위기(atmosphere)**, **메뉴(menu)** 정보를 종합하여 3~4줄의 풍성한 줄글로 소개해.
+   - **[필수] 설명 중간에 키워드 빈도수(예: '뷰'(15회))를 괄호와 함께 반드시 명시해.**
+   - **다른 카페 추천은 하지 마.**
+
+2. **Comparison 모드 (비교)**:
+   - 목록에 있는 카페들의 공통점과 차이점을 분석해줘.
+   - 각 카페의 특징적인 키워드와 빈도수를 언급하며 비교해.
+
+3. **Recommendation 모드 (일반 추천)**:
+   - 기존처럼 3개의 카페를 번호를 매겨 추천해.
+   - **Bullet point** 형식:
+     - 특징: ...
+     - 추천 이유: ... (1순위 키워드 외에 2~3순위 키워드도 섞어서 작성하며, **빈도수(예: '(15회)')를 반드시 포함해**.)
+   - 질문은 절대 하지 마.
+
+4. **공통 사항**:
+   - 말투는 친절한 "~해요"체를 사용해.
+   - 질문(예: "어떠신가요?")을 절대 덧붙이지 마.
   `.trim();
 
   try {
-    const text = await openaiChat({
+    let text = await openaiChat({
       messages: [
-        { role: "system", content: "You are a helpful Korean cafe recommendation assistant." },
+        { role: "system", content: "You are a versatile cafe assistant." },
         { role: "user", content: prompt },
       ],
-      temperature: 0.3,
-      max_completion_tokens: 600,
+      temperature: 0.5,
+      max_completion_tokens: 700,
     });
-    return followUp ? `${text}\n\n${followUp}` : text;
+    
+    // (질문 제거 로직)
+    let lines = text.trim().split('\n');
+    while (lines.length > 0) {
+      const lastLine = lines[lines.length - 1].trim();
+      if (
+        lastLine === "" || 
+        lastLine.endsWith("?") || 
+        lastLine.includes("알려주실") ||
+        lastLine.includes("어떠신가요")
+      ) {
+        lines.pop();
+      } else {
+        break;
+      }
+    }
+    return lines.join('\n').trim();
+
   } catch (err) {
-    console.warn("[openai] 설명 생성 실패, fallback 사용:", err?.message || err);
-    const lines = results.map((c, i) => {
-      const reason = formatMatchSummary(c);
-      return `${i + 1}. ${c.name}${c.address ? ` (${c.address})` : ""}${reason ? `\n   - ${reason}` : ""}`;
-    });
-    const base = `요청하신 조건과 “리뷰 키워드 언급량”을 기준으로 추천드려요.\n\n${lines.join("\n")}`;
-    return followUp ? `${base}\n\n${followUp}` : base;
+    return "죄송해요, 상세 설명을 생성하는 데 문제가 생겼어요. 위 목록을 참고해 주세요.";
   }
 }

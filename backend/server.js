@@ -11,7 +11,8 @@ import { loadCafes } from "./data.js";          // CSV fallback
 import { loadCafesFromDB } from "./data_db.js"; // DB loader(있어야 함)
 
 import { recommendCafes } from "./recommend.js";
-import { extractPreferences, generateRecommendationMessage, buildFollowUpQuestion } from "./gpt.js";
+// ✅ [수정] buildFollowUpQuestion 제거
+import { extractPreferences, generateRecommendationMessage } from "./gpt.js";
 
 
 const PORT = Number(process.env.PORT || 3000);
@@ -279,10 +280,7 @@ function mergePrefs(base, delta, userMessage) {
   const b = normalizePrefObj(delta);
   const msg = (userMessage || "").toString();
 
-  // ✅ "바꿔줘/대신/말고" 등은 기존 조건을 교체하고 싶다는 힌트로 간주
   const replaceHint = /(대신|말고|바꿔|변경|다른\s*(?:분위기|목적|메뉴|지역))/i.test(msg);
-
-  // region은 보통 단일 선택 성격이 강해서: 새 값이 들어오면 교체
   const region = b.region.length ? uniq(b.region) : uniq(a.region);
 
   return {
@@ -293,6 +291,9 @@ function mergePrefs(base, delta, userMessage) {
     menu: replaceHint && b.menu.length ? uniq(b.menu) : uniq([...a.menu, ...b.menu]),
     required: replaceHint && b.required.length ? uniq(b.required) : uniq([...a.required, ...b.required]),
     minSentiment: Math.max(a.minSentiment || 0, b.minSentiment || 0),
+    // ✅ target/intent 전달
+    target: delta.target || null,
+    intent: delta.intent || "recommendation",
   };
 }
 
@@ -314,51 +315,6 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref?.();
 
-// function uniq(arr) {
-//   return Array.from(new Set((arr || []).map((v) => String(v || "").trim()).filter(Boolean)));
-// }
-
-// // "대신/말고/변경" 등이 있으면 해당 필드를 '교체' 우선으로 처리
-// function mergePrefs(prevPrefs, nextPrefs, userMessage = "") {
-//   const a = normalizePrefObj(prevPrefs);
-//   const b = normalizePrefObj(nextPrefs);
-
-//   const replaceHint = /(대신|말고|바꿔|변경|정정)/.test(userMessage);
-
-//   return {
-//     // ✅ 지역은 혼합 추천이 어색한 경우가 많아서: 새 지역이 나오면 교체, 아니면 유지
-//     region: b.region.length ? uniq(b.region) : uniq(a.region),
-
-//     // ✅ 나머지는 기본적으로 누적, replaceHint면 교체
-//     atmosphere: replaceHint && b.atmosphere.length ? uniq(b.atmosphere) : uniq([...a.atmosphere, ...b.atmosphere]),
-//     taste: replaceHint && b.taste.length ? uniq(b.taste) : uniq([...a.taste, ...b.taste]),
-//     purpose: replaceHint && b.purpose.length ? uniq(b.purpose) : uniq([...a.purpose, ...b.purpose]),
-//     menu: replaceHint && b.menu.length ? uniq(b.menu) : uniq([...a.menu, ...b.menu]),
-//     required: replaceHint && b.required.length ? uniq(b.required) : uniq([...a.required, ...b.required]),
-
-//     minSentiment: Math.max(a.minSentiment || 0, b.minSentiment || 0),
-//   };
-// }
-
-// function getChatSession(sessionId) {
-//   const s = chatSessions.get(sessionId);
-//   if (!s) return null;
-//   if (!s.updatedAt || Date.now() - s.updatedAt > CHAT_SESSION_TTL_MS) {
-//     chatSessions.delete(sessionId);
-//     return null;
-//   }
-//   return s;
-// }
-
-// // 주기적 GC(선택): 오래된 세션 정리
-// setInterval(() => {
-//   const now = Date.now();
-//   for (const [k, v] of chatSessions.entries()) {
-//     if (!v?.updatedAt || now - v.updatedAt > CHAT_SESSION_TTL_MS) chatSessions.delete(k);
-//   }
-// }, 5 * 60 * 1000).unref?.();
-
-
 function pickCafeResultFields(cafe) {
     // ✅ 사진 원본 후보들(데이터셋에 있는 키들 최대한 흡수)
   const rawPhotos =
@@ -371,7 +327,7 @@ function pickCafeResultFields(cafe) {
 
   // ✅ 문자열/JSON/배열 모두 처리해서 "URL 배열"로 만들기
   const photos = (() => {
-    const j = safeJsonParse(rawPhotos, null); // server.js에 이미 있음 :contentReference[oaicite:7]{index=7}
+    const j = safeJsonParse(rawPhotos, null);
     let arr = [];
 
     if (Array.isArray(j)) arr = j;
@@ -399,13 +355,13 @@ function pickCafeResultFields(cafe) {
     return out;
   })();
 
-  // ✅ 대표 1장(PlacePopup이 image_url도 읽습니다 :contentReference[oaicite:8]{index=8})
+  // ✅ 대표 1장(PlacePopup이 image_url도 읽습니다)
   const image_url =
     cafe.image_url ??
     cafe.img_url ??
     cafe.thumbnail ??
     photos[0] ??
-    firstFromJsonArray(cafe.images_json ?? cafe.imagesJson); // server.js에 이미 있음 :contentReference[oaicite:9]{index=9}
+    firstFromJsonArray(cafe.images_json ?? cafe.imagesJson);
 
 
   return {
@@ -454,7 +410,7 @@ async function handleFilter(req, res) {
       return res.json({
         ok: true,
         results: [],
-        warning: "카페 데이터(CSV/DB)가 아직 준비되지 않았습니다.",
+        // warning: "카페 데이터(CSV/DB)가 아직 준비되지 않았습니다.",
       });
     }
     const prefs = req.body || {};
@@ -609,6 +565,44 @@ function splitTagsFromScoreBy(scoreBy) {
   const parking = normalizeStr(scoreBy?.parking ?? "");
 
   return { menuTags, tasteTags, atmosphereTags, purposeTags, parking };
+}
+
+// ===== oneshot(cafe_tags) helpers =====
+function splitPipeTags(v) {
+  const s = normalizeStr(v);
+  if (!s) return [];
+  return s
+    .split("|")
+    .map((x) => normalizeStr(x))
+    .filter(Boolean);
+}
+
+// q="조용한" 같은 활용형도 "조용/조용함"에 매칭되도록 최소 보정
+function expandQueryTokens(q) {
+  const s0 = normalizeStr(q).toLowerCase();
+  const s = s0.replace(/\s+/g, "");
+  const out = new Set([s]);
+
+  // 조용한 -> 조용, 조용함
+  if (s.endsWith("한") && s.length >= 2) {
+    const stem = s.slice(0, -1);
+    out.add(stem);
+    out.add(stem + "함");
+  }
+  // 아늑함 -> 아늑
+  if (s.endsWith("함") && s.length >= 2) {
+    out.add(s.slice(0, -1));
+  }
+  // 감성적인 -> 감성
+  if (s.endsWith("적인") && s.length >= 3) {
+    out.add(s.slice(0, -2));
+  }
+  // 고급스러운 -> 고급
+  if (s.endsWith("스러운") && s.length >= 4) {
+    out.add(s.slice(0, -3));
+  }
+
+  return [...out].filter(Boolean);
 }
 
 function tokensFromKeywordCounts(keywordCountsRaw, maxItems = 80) {
@@ -787,6 +781,14 @@ async function queryCafesWithLatestStats() {
       c.lon,
       c.map_urls_json,
       c.images_json,
+
+      -- ✅ oneshot raw (cafe_tags)
+      ot.theme_raw   AS oneshot_theme_raw,
+      ot.dessert_raw AS oneshot_dessert_raw,
+      ot.purpose_raw AS oneshot_purpose_raw,
+      ot.mood_raw    AS oneshot_mood_raw,
+      ot.must_raw    AS oneshot_must_raw,
+
       s.score_total,
       s.review_count_total,
       s.review_count_recent,
@@ -795,6 +797,8 @@ async function queryCafesWithLatestStats() {
       s.top_keywords_json,
       s.keyword_counts_json
     FROM cafes c
+    LEFT JOIN cafe_tags ot
+      ON ot.cafe_id = c.cafe_id    
     LEFT JOIN (
       SELECT s1.*
       FROM cafe_stats s1
@@ -1126,11 +1130,28 @@ app.get("/api/cafes", async (req, res) => {
       const topKeywords = safeJsonParse(r.top_keywords_json, []);
       const topKeywordsArr = Array.isArray(topKeywords) ? topKeywords : [];
 // ✅ keyword_counts_json(상대적으로 더 많은 토큰)도 같이 반영해서 디저트 매칭 커버리지↑
-const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
-const keywordCountTokens = tokensFromKeywordCounts(keywordCountsRaw, 80);
-const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
+      const keywordCountsRaw = safeJsonParse(r.keyword_counts_json, null);
+      const keywordCountTokens = tokensFromKeywordCounts(keywordCountsRaw, 80);
+      const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const extReviewCount = Number(r.review_count_total || 0) || 0;
       const ua = userAgg.get(Number(r.cafe_id)) || { count: 0, avg: null };
+      // ✅ oneshot raw (cafe_tags) 파싱
+      const oneshotTheme = splitPipeTags(r.oneshot_theme_raw);
+      const oneshotDessert = splitPipeTags(r.oneshot_dessert_raw);
+      const oneshotPurpose = splitPipeTags(r.oneshot_purpose_raw);
+      const oneshotMood = splitPipeTags(r.oneshot_mood_raw);
+      const oneshotMust = splitPipeTags(r.oneshot_must_raw);
+
+      const oneshotAll = uniq([
+        ...oneshotTheme,
+        ...oneshotDessert,
+        ...oneshotPurpose,
+        ...oneshotMood,
+        ...oneshotMust,
+      ]);
+
+      // ✅ derivedThemes/derivedDesserts에도 oneshot 토큰을 같이 반영(커버리지↑)
+      const keywordsForDerive = uniq([...keywordsForMatch, ...oneshotAll]);
 
       const userReviewCount = ua.count || 0;
       const userRatingAvg = ua.avg == null ? null : Math.round(Number(ua.avg) * 10) / 10;
@@ -1140,7 +1161,7 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
 
       const { menuTags, tasteTags, atmosphereTags, purposeTags , parking } = splitTagsFromScoreBy(scoreBy);
       const { themes: derivedThemes, desserts: derivedDesserts } = deriveThemesAndDesserts({
-        topKeywords: keywordsForMatch,
+        topKeywords: keywordsForDerive,
         menuTags,
         tasteTags,
         atmosphereTags,
@@ -1189,16 +1210,32 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
         _address: normalizeStr(r.address),
         _regionText: normalizeStr(r.region),
         _parking: parking,
+        oneshot: {
+        theme: oneshotTheme,
+        dessert: oneshotDessert,
+        purpose: oneshotPurpose,
+        mood: oneshotMood,
+        must: oneshotMust,
+      },
+      _oneshotText: oneshotAll.join(" "),
       };
     });
+
+ 
 
     // ✅ 지역: 복수 선택이면 OR (선택 지역 중 하나라도)
     if (regions.length) items = items.filter((x) => regions.includes(x.region));
 
     if (q) {
+      const qTokens = expandQueryTokens(q); // ✅ "조용한" -> ["조용한","조용","조용함"] 등
       items = items.filter((x) => {
-        const hay = `${x.name} ${x.neighborhood} ${x.excerpt} ${x._address} ${x._regionText}`.toLowerCase();
-        return hay.includes(q);
+        const hay = (
+          `${x.name} ${x.neighborhood} ${x.excerpt} ${x._address} ${x._regionText} ${x._oneshotText || ""}`
+        )
+          .toLowerCase()
+          .replace(/\s+/g, ""); // 공백 제거해 매칭 안정화
+
+        return qTokens.some((t) => hay.includes(String(t).replace(/\s+/g, "")));
       });
     }
 
@@ -1239,6 +1276,11 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
           c.lon,
           c.map_urls_json,
           c.images_json,
+          ot.theme_raw   AS oneshot_theme_raw,
+          ot.dessert_raw AS oneshot_dessert_raw,
+          ot.purpose_raw AS oneshot_purpose_raw,
+          ot.mood_raw    AS oneshot_mood_raw,
+          ot.must_raw    AS oneshot_must_raw,
           s.score_total,
           s.review_count_total,
           s.review_count_recent,
@@ -1247,6 +1289,8 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
           s.top_keywords_json,
           s.keyword_counts_json
         FROM cafes c
+        LEFT JOIN cafe_tags ot
+          ON ot.cafe_id = c.cafe_id
         LEFT JOIN (
           SELECT s1.*
           FROM cafe_stats s1
@@ -1267,6 +1311,14 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       if (!rows.length) return res.status(404).json({ message: "카페를 찾을 수 없습니다." });
 
       const r = rows[0];
+
+      const oneshotTheme = splitPipeTags(r.oneshot_theme_raw);
+      const oneshotDessert = splitPipeTags(r.oneshot_dessert_raw);
+      const oneshotPurpose = splitPipeTags(r.oneshot_purpose_raw);
+      const oneshotMood = splitPipeTags(r.oneshot_mood_raw);
+      const oneshotMust = splitPipeTags(r.oneshot_must_raw);
+      const oneshotAll = uniq([...oneshotTheme, ...oneshotDessert, ...oneshotPurpose, ...oneshotMood, ...oneshotMust]);
+
 
       // ✅ 회원리뷰 집계(해당 카페)
       let userReviewCount = 0;
@@ -1297,8 +1349,8 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
       const photos = arrayFromJson(r.images_json);
       const mapUrl = firstFromJsonArray(r.map_urls_json);
 
-      const tags = Array.from(new Set([...topKeywordsArr, ...menuTags, ...tasteTags, ...atmosphereTags, ...purposeTags].map((x) => normalizeStr(x)).filter(Boolean)))
-        .slice(0, 12);
+      const tags = Array.from(new Set([...topKeywordsArr, ...menuTags, ...tasteTags, ...atmosphereTags, ...purposeTags, ...oneshotAll].map((x) => normalizeStr(x)).filter(Boolean)))
+          .slice(0, 12);
 
       const keywordCounts = (() => {
         const out = [];
@@ -1392,6 +1444,13 @@ const keywordsForMatch = uniq([...topKeywordsArr, ...keywordCountTokens]);
           topKeywords: topKeywordsArr,
           menuTags,
           keywordCounts,
+          oneshot: {
+            theme: oneshotTheme,
+            dessert: oneshotDessert,
+            purpose: oneshotPurpose,
+            mood: oneshotMood,
+            must: oneshotMust,
+          },
         },
       });
     } catch (e) {
@@ -1541,10 +1600,8 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
   /** 챗봇 추천 */
   app.post("/api/chat", async (req, res) => {
     try {
-      const cafesForChat = cafes.length ? cafes : CHATBOT_MOCK ? mockCafes : [];
-      const warning =
-        cafes.length ? null : CHATBOT_MOCK ? "현재 카페 데이터가 없어 샘플 데이터로 응답 중입니다. (CHATBOT_MOCK=1)" : null;
-
+      const cafesForChat = cafes.length ? cafes : CHATBOT_MOCK ? mockCafes : []; 
+        
       if (!cafesForChat.length) {
         return res.json({
           ok: true,
@@ -1567,7 +1624,7 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
         chatSessions.delete(sid);
         return res.json({
           ok: true,
-          warning,
+          // warning,
           sessionId: sid,
           message: "대화 조건을 초기화했어요. 원하시는 지역/분위기/목적을 다시 말씀해 주세요.",
           prefs: { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [], minSentiment: 0 },
@@ -1577,7 +1634,7 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
 
       const session = sid ? getChatSession(sid) : null;
       const basePrefs = session?.prefs || prevPrefs || {};
-
+      
       let deltaPrefs;
       try {
         deltaPrefs = await extractPreferences(userMessage);
@@ -1585,25 +1642,56 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
         deltaPrefs = { region: [], atmosphere: [], taste: [], purpose: [], menu: [], required: [], minSentiment: 0 };
       }
 
+      // 🔥 [추가] AI가 카페 이름을 놓쳤을 경우, 메시지에서 카페 이름 직접 찾기 (Fallback)
+      if (!deltaPrefs.target) {
+        // 공백 제거 후 비교 (예: "라라 브레드" -> "라라브레드")
+        const normalizedMsg = userMessage.replace(/\s+/g, "");
+        const matchedCafe = cafesForChat.find(c => {
+           if (!c.name) return false;
+           const n = normalizeStr(c.name).replace(/\s+/g, "");
+           // 메시지에 카페 이름이 포함되어 있고, 이름이 2글자 이상인 경우 매칭
+           return normalizedMsg.includes(n) && n.length >= 2;
+        });
+        
+        if (matchedCafe) {
+           deltaPrefs.target = matchedCafe.name;
+           deltaPrefs.intent = "detail"; // 이름을 언급했으면 상세 정보 의도로 간주
+           console.log(`[Server] Detected target cafe in message: ${matchedCafe.name}`);
+        }
+      }
+
       // ✅ (핵심) 이전 질문을 기억하도록 basePrefs + deltaPrefs를 병합
       const prefs = mergePrefs(basePrefs, deltaPrefs, userMessage);
 
+      // ✅ 특정 카페(target) 검색 로직
+      let recs = [];
+      if (prefs.target) {
+        const tName = normalizeStr(prefs.target).replace(/\s+/g, "");
+        // 이름 포함 여부로 검색 (공백 무시 비교)
+        const found = cafesForChat.find((c) => 
+          normalizeStr(c.name).replace(/\s+/g, "").includes(tName)
+        );
+        if (found) {
+          recs = [found]; // 찾았으면 결과 고정
+        }
+      }
+      
       // ✅ 조건이 바뀌면(새로운 질의) 이전에 보여준 카페 목록(seenIds) 초기화
       const key = stablePrefsKey(prefs);
       const nextSession = session || (sid ? { prefs: {}, prefsKey: "", seenIds: [], followUpAsked: false, updatedAt: 0 } : null);
-      if (nextSession && !isMore && nextSession.prefsKey && nextSession.prefsKey !== key) {
-        nextSession.seenIds = [];
-        nextSession.followUpAsked = false;
+      
+      if (recs.length === 0) {
+          if (nextSession && !isMore && nextSession.prefsKey && nextSession.prefsKey !== key) {
+            nextSession.seenIds = [];
+            nextSession.followUpAsked = false;
+          }
+
+          const poolK = Math.max(CHAT_RESULTS_PER_TURN * 20, 30);
+          const pool = recommendCafes(prefs, cafesForChat, poolK);
+          const seenSet = new Set(nextSession?.seenIds || []);
+          recs = pool.filter((c) => !seenSet.has(c.id)).slice(0, CHAT_RESULTS_PER_TURN);
+          if (!recs.length) recs = pool.slice(0, CHAT_RESULTS_PER_TURN);
       }
-
-      // ✅ 추천 결과: 기본은 3개만 카드로 보여주기
-      // - "다른 곳도 추천"이면 기존에 보여준 카페는 제외하고 다음 3개를 반환
-      const poolK = Math.max(CHAT_RESULTS_PER_TURN * 20, 30);
-      const pool = recommendCafes(prefs, cafesForChat, poolK);
-      const seenSet = new Set(nextSession?.seenIds || []);
-      let recs = pool.filter((c) => !seenSet.has(c.id)).slice(0, CHAT_RESULTS_PER_TURN);
-      if (!recs.length) recs = pool.slice(0, CHAT_RESULTS_PER_TURN);
-
       let replyMessage;
       try {
         replyMessage = await generateRecommendationMessage(userMessage, prefs, recs);
@@ -1614,14 +1702,11 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
             : `조건에 맞는 카페를 찾지 못했어요. 조건을 조금 완화해보세요.`;
       }
 
-      // ✅ 후속 질문은 "한 번만"(그리고 "다른 곳도 추천" 같은 추가 요청에는 붙이지 않음)
-      if (nextSession && !isMore && !nextSession.followUpAsked) {
-        const followUp = buildFollowUpQuestion(prefs);
-        if (followUp) {
-          replyMessage = `${replyMessage}\n\n${followUp}`;
-          nextSession.followUpAsked = true;
-        }
-      }
+      // ✅ 후속 질문 제거 (코드 정리됨)
+      // if (nextSession && !isMore && !nextSession.followUpAsked) {
+      //   const followUp = buildFollowUpQuestion(prefs);
+      //   ...
+      // }
 
       // ✅ 세션 갱신
       if (sid) {
@@ -1637,7 +1722,7 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
 
       return res.json({
         ok: true,
-        warning,
+        // warning,
         message: replyMessage,
         prefs,
         results: recs.map(pickCafeResultFields),

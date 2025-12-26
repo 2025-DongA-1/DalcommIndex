@@ -25,4 +25,7 @@ export const pool = mysql.createPool({
   database: process.env.DB_NAME,
   connectionLimit: 10,
   waitForConnections: true,
+  connectTimeout: 30000,      // ✅ 연결 타임아웃 30초
+  enableKeepAlive: true,      // ✅ TCP keep-alive
+  keepAliveInitialDelay: 0,   // ✅ 즉시 keep-alive 시작                
 });

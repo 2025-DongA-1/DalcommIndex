@@ -12,6 +12,44 @@ function safeJsonParse(v, fallback) {
   }
 }
 
+function normalizeOneShotToken(x) {
+  const t = normalizeStr(x);
+  if (!t) return "";
+
+  // theme
+  if (t === "포토존/인스타") return "사진";
+  if (t === "뷰맛집") return "뷰";
+  if (t === "대형카페") return "넓음";
+  if (t === "모던/깔끔") return "모던";
+  if (t === "테라스/야외") return "테라스";
+  if (t === "정원/가든") return "정원";
+  if (t === "빈티지/레트로") return "감성";
+
+  // mood
+  if (t === "조용함") return "조용";
+  if (t === "아늑함") return "아늑";
+  if (t === "쾌적함") return "넓음";
+
+  // dessert
+  if (t === "베이커리/빵") return "빵";
+  if (t === "쿠키/구움과자") return "쿠키";
+  if (t === "아이스크림/젤라또") return "아이스크림";
+  if (t === "크레페/와플") return "와플";
+
+  // purpose/must
+  if (t === "가족/키즈") return "가족";
+  if (t === "공부/작업") return "혼카페/작업";
+  if (t === "반려견동반") return "반려동물/애견동반";
+  if (t === "주차가능") return "주차 가능";
+
+  return t; // 나머지는 그대로
+}
+
+function addNormalized(set, raw) {
+  const v = normalizeOneShotToken(raw);
+  if (v) set.add(v);
+}
+
 function normalizeStr(v) {
   return (v ?? "").toString().trim();
 }
@@ -91,8 +129,15 @@ export async function loadCafesFromDB() {
       s.last_mentioned_at,
       s.score_by_category_json,
       s.top_keywords_json,
-      s.keyword_counts_json
+      s.keyword_counts_json,
+      t.theme_raw  AS oneshot_theme_raw,
+      t.dessert_raw AS oneshot_dessert_raw,
+      t.purpose_raw AS oneshot_purpose_raw,
+      t.mood_raw AS oneshot_mood_raw,
+      t.must_raw AS oneshot_must_raw
     FROM cafes c
+    LEFT JOIN cafe_tags t
+      ON t.cafe_id = c.cafe_id
     LEFT JOIN (
       SELECT s1.*
       FROM cafe_stats s1
@@ -116,7 +161,8 @@ export async function loadCafesFromDB() {
     const atmosphereTags = toTokenSet(scoreBy?.atmosphere_tags ?? scoreBy?.atmosphereTags ?? []);
     const menuTags = toTokenSet(scoreBy?.menu_tags ?? scoreBy?.menuTags ?? []);
     const tasteTags = toTokenSet(scoreBy?.taste_tags ?? scoreBy?.tasteTags ?? []);
-    const parking = normalizeStr(scoreBy?.parking) || "정보 없음";
+    let parking = normalizeStr(scoreBy?.parking) || "정보 없음";
+
 
     // DB(lat/lon) -> 프론트(Map/Kakao)에서 쓰는 x/y로 변환: x=lon, y=lat
     const x = numOrNull(r.lon);
@@ -133,6 +179,30 @@ export async function loadCafesFromDB() {
     const atmosphereSet = new Set([...atmosphereTags]);
     const purposeSet = new Set([...companionTags]);
 
+        // ✅ one-shot raw → Set
+    const oneshotTheme = toTokenSet(r.oneshot_theme_raw);
+    const oneshotDessert = toTokenSet(r.oneshot_dessert_raw);
+    const oneshotPurpose = toTokenSet(r.oneshot_purpose_raw);
+    const oneshotMood = toTokenSet(r.oneshot_mood_raw);
+    const oneshotMust = toTokenSet(r.oneshot_must_raw);
+
+    const mustSet = new Set();
+
+    // ✅ 병합 규칙
+    for (const x of oneshotTheme) addNormalized(atmosphereSet, x);
+    for (const x of oneshotMood) addNormalized(atmosphereSet, x);
+    for (const x of oneshotDessert) addNormalized(menuSet, x);
+    for (const x of oneshotPurpose) addNormalized(purposeSet, x);
+    for (const x of oneshotMust) addNormalized(mustSet, x);
+
+    // ✅ 주차 보강
+    if (parking === "정보 없음") {
+      for (const x of oneshotMust) {
+        if (String(x).includes("주차")) { parking = "가능"; break; }
+      }
+    }
+
+
     const searchText = [
       name,
       address,
@@ -141,6 +211,7 @@ export async function loadCafesFromDB() {
       [...tasteSet].join(" "),
       [...atmosphereSet].join(" "),
       [...purposeSet].join(" "),
+      [...mustSet].join(" "),
       Array.isArray(topKeywords) ? topKeywords.join(" ") : "",
       keywordTokens.join(" "),
       parking,
@@ -167,7 +238,7 @@ export async function loadCafesFromDB() {
       taste_norm: setToPipe(tasteSet),
       purpose_norm: setToPipe(purposeSet),
       menu_norm: setToPipe(menuSet),
-      companion_norm: "",
+      companion_norm: setToPipe(mustSet),
 
       menuSet,
       atmosphereSet,
