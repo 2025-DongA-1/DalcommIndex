@@ -446,20 +446,34 @@ export default function CafeDetail() {
           </div>
 
           <div className="cfd-top-right">
-            <button
-              type="button"
-              className="cfd-action"
-              onClick={() => {
-                const id = detail?.id ?? favoriteCafeId;
-                if (!id) return;
+<button
+  type="button"
+  className="cfd-action"
+  onClick={() => {
+    const focusId = detail?.cafe_id ?? id;
+    if (!focusId) return;
 
-                navigate(`/map?focus=${encodeURIComponent(String(id))}`, {
-                  state: { focusCafe: { ...detail, id, rating: detail.userRatingAvg ?? null, } },
-                });
-              }}
-            >
-              지도
-            </button>
+    navigate(`/map?focus=${encodeURIComponent(String(focusId))}`, {
+      state: {
+        focusCafe: {
+          ...detail,
+
+          // ✅ Map.jsx가 읽는 핵심 키 (매칭 기준을 여기로 통일)
+          id: focusId,                 // ← 이 줄이 제일 중요!
+          cafe_id: detail?.cafe_id ?? focusId, // (선택) 안전빵으로 같이
+
+          // 기존처럼 남겨도 OK
+          focusId: String(focusId),
+          rating: detail.userRatingAvg ?? null,
+        },
+      },
+    });
+  }}
+>
+  지도
+</button>
+
+
 
 
             <button

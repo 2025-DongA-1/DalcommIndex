@@ -6,6 +6,17 @@ import KakaoMap from "../components/KakaoMap";
 import PlacePopup from "../components/PlacePopup";
 import { useLocation, useSearchParams } from "react-router-dom";
 
+
+const getCafeKey = (cafe) =>
+  String(
+    cafe?.cafe_id ??
+      cafe?.id ??
+      cafe?.place_id ??
+      cafe?.kakao_id ??
+      cafe?.naver_id ??
+      `${cafe?.name || ""}|${cafe?.address || ""}`
+  );
+
 const STORE_KEY = "dalcomm_map_state_v1";
 const VIEW_KEY = "dalcomm_map_view_v1";
 const KEEP_KEY = "dalcomm_keep_map_state_v1";
@@ -81,7 +92,8 @@ function safeParse(json) {
 function compactCafe(c) {
   if (!c) return c;
   return {
-    id: c.id ?? c.cafe_id ?? c.cafeId ?? c.cafeID ?? null,
+   cafe_id: c.cafe_id ?? c.id ?? c.cafeId ?? c.cafeID ?? null, // ✅ 보존
+id: c.cafe_id ?? c.id ?? c.cafeId ?? c.cafeID ?? null,      // ✅ cafe_id 우선
     name: c.name,
     address: c.address,
     region: c.region,
@@ -128,6 +140,11 @@ function compactCafe(c) {
 }
 
 export default function Map() {
+  const pendingFocusRef = useRef(null);
+
+  const normStr = (s) => String(s ?? "").replace(/\s+/g, "").toLowerCase();
+
+
   const [sidebarPrefs, setSidebarPrefs] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [searchResults, setSearchResults] = useState([]);
@@ -152,7 +169,7 @@ export default function Map() {
   const latestRef = useRef(null);
  latestRef.current = { isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults, sidebarPrefs };
 
-  const lastFocusKeyRef = useRef(null);
+ 
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
@@ -310,55 +327,112 @@ const filterUrl = API_BASE ? `${API_BASE}/api/filter` : "/api/filter";
     }
     }, [isSidebarOpen, hasSearched, topQuery, focusedIndex, searchResults, sidebarPrefs]);
 
-    useEffect(() => {
-    const stateCafe = location.state?.focusCafe || null;
-    const focusParam = sp.get("focus"); // /map?focus=123
+useEffect(() => {
+  const stateCafe = location.state?.focusCafe || null;
+  const focusParam = sp.get("focus"); // /map?focus=123
 
-    const focusKey = stateCafe?.id != null
-      ? `state:${stateCafe.id}`
-      : focusParam
-      ? `qs:${focusParam}`
-      : null;
+  if (!stateCafe && !focusParam) return;
 
-    if (!focusKey || lastFocusKeyRef.current === focusKey) return;
-    lastFocusKeyRef.current = focusKey;
+  const normalize = (c) =>
+    compactCafe({
+      ...c,
+      x: c.x ?? c.lon ?? c.lng ?? c.longitude,
+      y: c.y ?? c.lat ?? c.latitude,
+      url: c.url ?? c.mapUrl ?? c.kakaoMapUrl ?? "",
+      photos: c.photos ?? c.images_json ?? c.imagesJson ?? c.imageUrls ?? c.images ?? [],
+    });
 
-    const normalize = (c) =>
-      compactCafe({
-        ...c,
-        // 혹시 lat/lon으로 넘어와도 동작하게
-        x: c.x ?? c.lon ?? c.lng ?? c.longitude,
-        y: c.y ?? c.lat ?? c.latitude,
-        url: c.url ?? c.mapUrl ?? c.kakaoMapUrl ?? "",
-        // 사진 키도 들어오면 넘겨주기(PlacePopup에서 보강하긴 하지만 있으면 바로 씀)
-        photos: c.photos ?? c.images_json ?? c.imagesJson ?? c.imageUrls ?? c.images ?? [],
-      });
+  const target = stateCafe ? normalize(stateCafe) : null;
 
-    const target = stateCafe ? normalize(stateCafe) : null;
-    const targetId = focusParam ?? (target?.id != null ? String(target.id) : null);
+  const list = Array.isArray(searchResults) ? searchResults : [];
 
-    if (target) {
-      // 검색결과가 비어있으면 해당 카페 1개라도 results에 넣어서 마커가 뜨게 함
-      setSearchResults((prev) => {
-        const exists = prev.some((p) => String(p.id) === String(target.id));
-        if (exists) return prev;
-        return prev.length ? prev : [target];
+  // ✅ 1) stateCafe가 있으면 "이름+주소"로 먼저 찾기 (가장 확실)
+  let idx = -1;
+  if (target?.name) {
+    const tn = normStr(target.name);
+    const ta = normStr(target.address);
+    idx = list.findIndex((p) => {
+      if (!p) return false;
+      const pn = normStr(p.name);
+      const pa = normStr(p.address);
+      if (!pn || pn !== tn) return false;
+      // 주소가 있는 경우엔 주소까지 맞추고, 주소가 없으면 이름만으로도 허용
+      return ta ? pa === ta : true;
+    });
+  }
+
+  // ✅ 2) 못 찾으면 focusParam/id로 찾기
+  if (idx < 0) {
+    const f = focusParam ? String(focusParam) : target ? getCafeKey(target) : null;
+    if (f) {
+      idx = list.findIndex((p) => {
+        if (!p) return false;
+        return (
+          String(p.cafe_id ?? "") === f ||
+          String(p.id ?? "") === f ||
+          getCafeKey(p) === f
+        );
       });
     }
+  }
 
-    const list = searchResults.length ? searchResults : target ? [target] : [];
-    const idx = targetId ? list.findIndex((p) => String(p.id) === String(targetId)) : -1;
-
-    if (idx >= 0) {
-      setFocusedIndex(idx);
-      openPopup(list[idx]);
-    } else if (target) {
-      setFocusedIndex(0);
-      openPopup(target);
-    }
-
+  // ✅ 찾았으면: 그 카페로 강제 포커싱 + 팝업
+  if (idx >= 0) {
+    setFocusedIndex(idx);
+    openPopup(list[idx]);
     setFitBoundsOnResults(false);
-  }, [location.state, location.key, sp, searchResults]);
+    return;
+  }
+
+  // ✅ 3) 그래도 못 찾으면: target을 results에 추가하고(순서 유지: 맨 뒤에 붙임) 다음 effect에서 다시 잡음
+  if (target) {
+    pendingFocusRef.current = {
+      key: getCafeKey(target),
+      name: target.name,
+      address: target.address,
+    };
+
+    setSearchResults((prev) => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const exists = arr.some((p) => {
+        if (!p) return false;
+        const sameName = normStr(p.name) === normStr(target.name);
+        const sameAddr = target.address ? normStr(p.address) === normStr(target.address) : true;
+        return sameName && sameAddr;
+      });
+      return exists ? arr : [...arr, target];
+    });
+
+    openPopup(target); // 일단 팝업은 target으로 열어둠
+    setFitBoundsOnResults(false);
+  }
+}, [location.key]); // ✅ "지도 버튼으로 돌아올 때" location.key가 바뀌면서 1회 실행
+
+// ✅ target을 results에 추가한 경우, results가 실제로 갱신된 뒤에 "정확한 idx"를 다시 잡아 포커싱
+useEffect(() => {
+  const p = pendingFocusRef.current;
+  if (!p) return;
+  if (!Array.isArray(searchResults) || searchResults.length === 0) return;
+
+  const idx = searchResults.findIndex((c) => {
+    if (!c) return false;
+
+    // 1) key 우선
+    if (p.key && getCafeKey(c) === String(p.key)) return true;
+
+    // 2) 이름+주소
+    const sameName = normStr(c.name) === normStr(p.name);
+    const sameAddr = p.address ? normStr(c.address) === normStr(p.address) : true;
+    return sameName && sameAddr;
+  });
+
+  if (idx >= 0) {
+    setFocusedIndex(idx);
+    openPopup(searchResults[idx]);
+    pendingFocusRef.current = null;
+  }
+}, [searchResults]);
+
 
   useEffect(() => {
     return () => {
