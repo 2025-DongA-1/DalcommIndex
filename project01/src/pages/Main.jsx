@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Header from "../components/Header";
+import PlacePopup from "../components/PlacePopup";
 import "../styles/Main.css";
 
 function safeArray(v) {
@@ -183,6 +184,13 @@ export default function Main() {
   const [hotRoadAreas, setHotRoadAreas] = useState(fallbackHot);
   const [rankLoading, setRankLoading] = useState(false);
 
+  const [cafesSnapshot, setCafesSnapshot] = useState([]);
+  const [themeSeed, setThemeSeed] = useState(0);
+
+  const [openCafeId, setOpenCafeId] = useState(null);
+  const [openCafeLoading, setOpenCafeLoading] = useState(false);
+  const [openCafe, setOpenCafe] = useState(null);
+
   useEffect(() => {
     let alive = true;
 
@@ -198,6 +206,10 @@ export default function Main() {
         const h = buildHotRoadAreasFromCafes(cafes, 5);
 
         if (!alive) return;
+
+        // ✅ 메인 “오늘의 테마 카페” 섹션에서 재활용
+        setCafesSnapshot(Array.isArray(cafes) ? cafes : []);
+
         if (t.length) setTrendingMenus(t);
         if (h.length) setHotRoadAreas(h);
       } catch (e) {
@@ -212,10 +224,233 @@ export default function Main() {
     return () => {
       alive = false;
     };
+
   }, []);
+
+  // ✅ 카페 카드 클릭 시: 서버의 /api/cafes/:id 로 단건 상세를 가져와서 모달로 보여줌
+  useEffect(() => {
+    let alive = true;
+    if (!openCafeId) {
+      setOpenCafe(null);
+      setOpenCafeLoading(false);
+      return;
+    }
+
+    const loadDetail = async () => {
+      try {
+        setOpenCafeLoading(true);
+        const r = await fetch(`/api/cafes/${openCafeId}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (!alive) return;
+        setOpenCafe(j?.cafe ?? null);
+      } catch (e) {
+        console.error("[Main] cafe detail load failed:", e);
+        if (alive) setOpenCafe(null);
+      } finally {
+        if (alive) setOpenCafeLoading(false);
+      }
+    };
+
+    loadDetail();
+
+    const onKeyDown = (ev) => {
+      if (ev.key === "Escape") setOpenCafeId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [openCafeId]);
+
+
+  // ✅ 메인 추천 카페 클릭 시: 지도 화면에서 쓰는 PlacePopup을 그대로 재사용
+  const popupPlace = useMemo(() => {
+    // 1) 상세 API(/api/cafes/:id)로 받은 데이터가 있으면 그걸 최우선
+    if (openCafe) {
+      return {
+        ...openCafe,
+        // PlacePopup이 읽는 URL 필드 보정(서버는 mapUrl로 내려줌)
+        url: openCafe?.url || openCafe?.mapUrl || openCafe?.homepage || "",
+        homepage: openCafe?.homepage || openCafe?.mapUrl || "",
+        // PlacePopup은 menu 필드를 봄(서버는 mainMenu)
+        menu: openCafe?.menu || openCafe?.mainMenu || "",
+      };
+    }
+
+    // 2) 아직 상세를 못 받았으면 /api/cafes 목록 스냅샷으로 “임시 카드”라도 보여주기
+    const stub = safeArray(cafesSnapshot).find((x) => Number(x?.id) === Number(openCafeId));
+    if (!stub) {
+      if (openCafeLoading) {
+        return { name: "불러오는 중…", address: "", photos: [] };
+      }
+      return null;
+    }
+
+    return {
+      id: Number(stub.id),
+      cafe_id: Number(stub.id),
+      name: stub?.name,
+      region: stub?.region,
+      address: stub?._address || "",
+      score: Number(stub?.score || 0) || 0,
+      rating: stub?.rating ?? null,
+      reviewCount: Number(stub?.reviewCount || 0) || 0,
+      photos: stub?.thumb ? [stub.thumb] : [],
+      // 상세 URL은 상세 API 응답에서 채워지게 두기
+      url: "",
+      homepage: "",
+      menu: "",
+    };
+  }, [openCafe, openCafeLoading, cafesSnapshot, openCafeId]);
 
   const [region, setRegion] = useState(regionOptions[0].value);
   const [keyword, setKeyword] = useState("");
+
+  const regionLabelMap = useMemo(() => {
+    const m = new Map();
+    for (const opt of regionOptions) m.set(opt.value, opt.label);
+    return m;
+  }, [regionOptions]);
+
+  const toSearchUrl = useCallback(
+    ({ regionValue, q, themes, desserts, sort } = {}) => {
+      const params = new URLSearchParams();
+      const r = regionValue ?? region;
+      if (r && r !== "all") params.set("region", r);
+      if (q) params.set("q", q);
+      if (themes) params.set("themes", themes);
+      if (desserts) params.set("desserts", desserts);
+      if (sort) params.set("sort", sort);
+      return `/search?${params.toString()}`;
+    },
+    [region]
+  );
+
+  const regionKeyFromText = (text) => {
+    const t = String(text || "");
+    if (t.includes("동구")) return "dong-gu";
+    if (t.includes("남구")) return "nam-gu";
+    if (t.includes("북구")) return "buk-gu";
+    if (t.includes("서구")) return "seo-gu";
+    if (t.includes("광산구")) return "gwangsan-gu";
+    if (t.includes("화순")) return "hwasun";
+    if (t.includes("담양")) return "damyang";
+    if (t.includes("나주")) return "naju";
+    return "all";
+  };
+
+  const extractRoadToken = (text) => {
+    const s = String(text || "").replace(/\([^)]*\)/g, " ").trim();
+    const parts = s.split(/\s+/).filter(Boolean);
+    // 마지막 "로/길/대로" 토큰을 우선
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (/(로|길|대로)$/.test(p)) return p;
+    }
+    return parts[parts.length - 1] || "";
+  };
+
+  const sortByScore = (a, b) =>
+    (Number(b?.score || 0) - Number(a?.score || 0)) ||
+    (Number(b?.reviewCount || 0) - Number(a?.reviewCount || 0));
+
+  const todayBundles = useMemo(() => {
+    const cafes = Array.isArray(cafesSnapshot) ? cafesSnapshot : [];
+    if (!cafes.length) return [];
+
+    // “그날” 느낌: 날짜 기반 시드 + 사용자가 눌러서 바꾸는 themeSeed
+    const now = new Date();
+    const daySeed = Math.floor(
+      (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(now.getFullYear(), 0, 1)) / 86400000
+    );
+    const seed = daySeed + themeSeed * 7;
+
+    const menuPick = trendingMenus?.length ? trendingMenus[seed % trendingMenus.length]?.name : "";
+    const hotPick = hotRoadAreas?.length ? hotRoadAreas[seed % hotRoadAreas.length]?.name : "";
+    const themePick = themeCards?.length ? themeCards[seed % themeCards.length] : null;
+
+    const menuItems = menuPick
+      ? cafes
+          .filter((c) => (Array.isArray(c?.desserts) ? c.desserts : []).includes(menuPick))
+          .sort(sortByScore)
+          .slice(0, 8)
+      : [];
+
+    const roadToken = extractRoadToken(hotPick);
+    const hotRegion = regionKeyFromText(hotPick);
+
+    const hotItems = hotPick
+      ? cafes
+          .filter((c) => {
+            const ra = String(c?.road_area_key || "");
+            const rk = String(c?.road_key || "");
+            const nb = String(c?.neighborhood || "");
+            const addr = String(c?._address || "");
+            const hay = `${ra} ${rk} ${nb} ${addr}`;
+            if (ra === hotPick || rk === hotPick || nb === hotPick) return true;
+            if (roadToken && hay.includes(roadToken)) return true;
+            if (hotPick && hay.includes(hotPick)) return true;
+            return false;
+          })
+          .sort(sortByScore)
+          .slice(0, 8)
+      : [];
+
+    const themeItems = themePick
+      ? cafes
+          .filter((c) => (Array.isArray(c?.themes) ? c.themes : []).includes(themePick.key))
+          .sort(sortByScore)
+          .slice(0, 8)
+      : [];
+
+    // 데이터가 적으면 안전하게 상위 스코어로 채움
+    const topFallback = cafes.slice().sort(sortByScore).slice(0, 8);
+    const finalMenuItems = menuItems.length ? menuItems : topFallback;
+    const finalHotItems = hotItems.length ? hotItems : topFallback;
+    const finalThemeItems = themeItems.length ? themeItems : topFallback;
+
+    const shortHotTitle = roadToken ? roadToken : hotPick;
+
+    return [
+      {
+        key: "menu",
+        kicker: "오늘의 디저트",
+        title: menuPick ? `오늘 ${menuPick}는 어때요?` : "오늘 뭐 먹지?",
+        sub: "리뷰 텍스트에서 많이 언급된 메뉴 기반",
+        cta: "맛집 찾아보기 →",
+        onViewAll: () => navigate(toSearchUrl({ q: menuPick || undefined, desserts: menuPick || undefined })),
+        items: finalMenuItems,
+      },
+      {
+        key: "road",
+        kicker: "오늘의 탐방 코스",
+        title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle}로 카페 탐방` : "오늘은 어디로 갈까?",
+        sub: "최근 언급/다양성이 높은 거리 기반",
+        cta: "거리 카페 보기 →",
+        onViewAll: () =>
+          navigate(
+            toSearchUrl({
+              regionValue: hotRegion !== "all" ? hotRegion : undefined,
+              q: roadToken || hotPick || undefined,
+            })
+          ),
+        items: finalHotItems,
+      },
+      {
+        key: "theme",
+        kicker: "오늘의 테마",
+        title: themePick ? `${themePick.title} 카페 모아보기` : "테마 카페",
+        sub: themePick?.sub || "리뷰 키워드 기반 자동 분류",
+        cta: "테마 전체보기 →",
+        onViewAll: () => themePick && navigate(toSearchUrl({ themes: themePick.key })),
+        items: finalThemeItems,
+      },
+    ];
+  }, [cafesSnapshot, trendingMenus, hotRoadAreas, themeCards, themeSeed, navigate, toSearchUrl]);
+
 
   const goSearch = (e) => {
     e.preventDefault();
@@ -275,6 +510,96 @@ export default function Main() {
               ))}
             </div>
           </form>
+        </div>
+      </section>
+
+      {/* ✅ 그날의 테마 카페 추천(실제 카페 카드) */}
+      <section className="today-theme">
+        <div className="container">
+          <div className="today-head">
+            <div>
+              <h2>오늘의 테마 카페</h2>
+              <div className="muted">리뷰 텍스트 기반으로 “메뉴/거리/테마” 3가지 루트로 추천해드립니다.</div>
+            </div>
+
+            <button
+              type="button"
+              className="linkish"
+              onClick={() => setThemeSeed((s) => (Number.isFinite(s) ? s + 1 : 1))}
+              title="추천 조합을 바꿔보기"
+            >
+              다른 조합 보기 ↻
+            </button>
+          </div>
+
+          {!todayBundles.length ? (
+            <div className="today-empty big">추천 데이터를 불러오는 중입니다…</div>
+          ) : (
+            todayBundles.map((b) => (
+              <div key={b.key} className="today-row">
+                <div className="today-row-head">
+                  <div className="today-row-title">
+                    <div className="kicker">{b.kicker}</div>
+                    <h3>{b.title}</h3>
+                    <div className="muted">{b.sub}</div>
+                  </div>
+
+                  <button type="button" className="linkish" onClick={b.onViewAll}>
+                    {b.cta}
+                  </button>
+                </div>
+
+                <div className="today-scroll" role="list">
+                  {safeArray(b.items).map((c) => {
+                    const regionLabel = regionLabelMap.get(c?.region) || c?.region || "지역";
+                    const ratingText = c?.rating == null ? "★ —" : `★ ${c.rating}`;
+                    const rc = Number(c?.reviewCount || 0) || 0;
+
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="cafe-mini"
+                        role="listitem"
+                        onClick={() => setOpenCafeId(c.id)}
+                      >
+                        <div className="thumb">
+                          {c?.thumb ? (
+                            <img src={c.thumb} alt="" loading="lazy" />
+                          ) : (
+                            <div className="thumb-fallback">No Image</div>
+                          )}
+                        </div>
+
+                        <div className="meta">
+                          <div className="name">{c?.name || "카페"}</div>
+                          <div className="line">
+                            {c?.neighborhood ? `${c.neighborhood} · ` : ""}
+                            {regionLabel}
+                          </div>
+                          <div className="line2">
+                            {ratingText} · 리뷰 {rc.toLocaleString("ko-KR")}
+                          </div>
+
+                          {safeArray(c?.why).length ? (
+                            <div className="tags">
+                              {safeArray(c.why)
+                                .slice(0, 3)
+                                .map((t) => (
+                                  <span key={t} className="tag">
+                                    {t}
+                                  </span>
+                                ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </section>
 
@@ -384,6 +709,11 @@ export default function Main() {
           </div>
         </section>
       </main>
+
+      
+      {/* ✅ 메인 추천 카페 클릭 시: 지도 팝업(PlacePopup) 그대로 띄우기 */}
+      <PlacePopup open={!!openCafeId} place={popupPlace} onClose={() => setOpenCafeId(null)} />
+
     </div>
   );
 }

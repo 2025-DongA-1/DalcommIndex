@@ -331,7 +331,8 @@ select:focus,input:focus{
 
 /* ✅ 히어로 배너 끝 ↔ 본문 시작 간격 0 (겹침 없음) */
 .main-page .hero-banner{
-  margin-bottom: 20px !important;  /* ← 여기 숫자만 조절 */
+  /* ✅ 검색창 ↔ 오늘의 테마 카페 간격 */
+  margin-bottom: 8px !important;  /* ← 여기 숫자만 조절 */
   padding-bottom: 0 !important;
 }
 
@@ -343,4 +344,335 @@ select:focus,input:focus{
 /* ✅ 첫 박스 안쪽 제목 때문에 떠 보이면(박스 내부만) */
 .main-page .reco-box .section-head{
   margin-top: 0 !important;
+}
+
+/* =========================
+   오늘의 테마 카페(실제 카드)
+   ========================= */
+.today-theme{
+  /* ✅ 검색창 아래 여백을 타이트하게 */
+  padding: 8px 0 2px;
+}
+
+.today-head{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.today-head h2{
+  margin: 0;
+  font-size: 18px;
+}
+
+.today-row{
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px 14px 10px;
+  box-shadow: 0 10px 22px rgba(20,20,20,0.06);
+  /* ✅ 오늘의 테마 ↔ 아래 섹션(지역별 추천) 간격 */
+  margin-bottom: 8px;
+}
+
+/* ✅ 마지막 줄은 아래 여백을 더 줄임 */
+.today-row:last-child{
+  margin-bottom: 4px;
+}
+
+.today-row-head{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.today-row-title h3{
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.kicker{
+  display: inline-block;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.today-scroll{
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  scroll-snap-type: x mandatory;
+}
+
+.today-scroll::-webkit-scrollbar{
+  height: 8px;
+}
+.today-scroll::-webkit-scrollbar-thumb{
+  background: rgba(20,20,20,0.12);
+  border-radius: 999px;
+}
+.today-scroll::-webkit-scrollbar-track{
+  background: rgba(20,20,20,0.05);
+  border-radius: 999px;
+}
+
+.cafe-mini{
+  width: 220px;
+  min-width: 220px;
+  text-align: left;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.cafe-mini:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(20,20,20,0.08);
+}
+
+.cafe-mini .thumb{
+  height: 132px;
+  background: rgba(20,20,20,0.04);
+  overflow: hidden;
+}
+
+.cafe-mini .thumb img{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb-fallback{
+  height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: rgba(20,20,20,0.55);
+  background: linear-gradient(135deg, rgba(255,111,145,0.10), rgba(20,20,20,0.03));
+}
+
+.thumb-fallback.big{
+  height: 240px;
+}
+
+.cafe-mini .meta{
+  padding: 10px 10px 12px;
+}
+
+.cafe-mini .name{
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.25;
+  margin-bottom: 4px;
+}
+
+.cafe-mini .line,
+.cafe-mini .line2{
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.25;
+}
+
+.tags{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tag{
+  display: inline-block;
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,111,145,0.08);
+  color: rgba(20,20,20,0.82);
+  font-size: 12px;
+}
+
+.tag.soft{
+  background: rgba(20,20,20,0.04);
+}
+
+.today-empty{
+  border: 1px dashed rgba(20,20,20,0.18);
+  border-radius: 16px;
+  padding: 16px;
+  color: var(--sub);
+  background: rgba(255,255,255,0.65);
+}
+
+.today-empty.big{
+  padding: 18px;
+  margin-bottom: 12px;
+}
+
+/* =========================
+   카페 상세 모달
+   ========================= */
+.cafe-modal-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(10,10,10,0.35);
+  display: grid;
+  place-items: center;
+  z-index: 999;
+  padding: 18px;
+}
+
+.cafe-modal{
+  width: min(960px, 100%);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.22);
+  position: relative;
+  overflow: hidden;
+}
+
+.cafe-modal-close{
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.92);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.cafe-modal-loading{
+  padding: 20px;
+  color: var(--sub);
+}
+
+.cafe-modal-body{
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 0;
+}
+
+.cafe-modal-media{
+  background: rgba(20,20,20,0.04);
+}
+
+.cafe-modal-media img{
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  max-height: 420px;
+  object-fit: cover;
+  display: block;
+}
+
+.cafe-modal-info{
+  padding: 18px 18px 16px;
+}
+
+.cafe-modal-title{
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.cafe-modal-sub{
+  font-size: 12px;
+  color: var(--sub);
+  margin-bottom: 10px;
+}
+
+.cafe-modal-stat{
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.cafe-modal-stat .dot{
+  margin: 0 6px;
+  color: rgba(20,20,20,0.30);
+}
+
+.cafe-modal-addr{
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.cafe-modal-tags{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.cafe-modal-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 820px){
+  .cafe-modal-body{
+    grid-template-columns: 1fr;
+  }
+  .thumb-fallback.big{
+    height: 220px;
+  }
+}
+
+/* =========================
+   GAP TIGHT HOTFIX
+   (검색창 ↔ 오늘의 테마, 오늘의 테마 ↔ 지역별 추천 간격 확 줄이기)
+   ========================= */
+
+/* 1) 히어로 배너 자체 높이를 줄여서, 아래 섹션이 위로 당겨지게 */
+.hero-banner{
+  height: clamp(240px, 32vh, 320px) !important;
+  min-height: 0 !important;
+  padding: 10px 0 0 !important;
+  margin-bottom: 0 !important;
+}
+
+/* 2) 오늘의 테마 섹션을 히어로에 최대한 붙이기 */
+.today-theme{
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: -78px !important;   /* ← 여기 핵심(붙이기) */
+  margin-bottom: 0 !important;
+}
+
+.today-head{
+  margin-bottom: 4px !important;
+}
+
+/* 3) 오늘의 테마 마지막 줄 ↔ 지역별 추천 붙이기 */
+.today-row{
+  margin-bottom: 6px !important;
+}
+.today-row:last-child{
+  margin-bottom: 0 !important;
+}
+
+/* 4) 지역별 추천 섹션(메인 컨텐츠)도 위로 살짝 당기기 */
+main.container.main-content{
+  margin-top: -60px !important;   /* ← 여기도 핵심(붙이기) */
+  padding-top: 0 !important;
 }
