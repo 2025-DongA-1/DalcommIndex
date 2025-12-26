@@ -267,16 +267,47 @@ function buildHotAreasFromCafes(items = [], catMap) {
 // ---------------------------
 
 function Drawer({ open, title, onClose, children, bodyRef }) {
+  const closeBtnRef = useRef(null);
+  const dialogRef = useRef(null);
+
   // Render drawer in a portal to avoid being clipped by any parent layout/overflow/transform.
   // Also lock body scroll while open.
   useEffect(() => {
     if (!open) return;
+    if (typeof document === "undefined") return;
+
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
   }, [open]);
+
+  // ESC 닫기 + 초기 포커스(접근성/UX)
+  useEffect(() => {
+    if (!open) return;
+    if (typeof document === "undefined") return;
+
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose?.();
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+
+    const t = setTimeout(() => {
+      // 닫기 버튼 → 없으면 다이얼로그 본문으로 포커스
+      if (closeBtnRef.current?.focus) closeBtnRef.current.focus();
+      else dialogRef.current?.focus?.();
+    }, 0);
+
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open, onClose]);
 
   if (!open) return null;
   if (typeof document === "undefined") return null;
@@ -322,15 +353,31 @@ function Drawer({ open, title, onClose, children, bodyRef }) {
   };
 
   return createPortal(
-    <div style={overlayStyle} onMouseDown={onClose}>
-      <aside style={drawerStyle} onMouseDown={(e) => e.stopPropagation()}>
+    <div style={overlayStyle} onMouseDown={onClose} role="presentation">
+      <aside
+        style={drawerStyle}
+        onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title || "상세 정보"}
+        tabIndex={-1}
+        ref={dialogRef}
+      >
         <div style={headerStyle}>
           <div className="rkpg-drawer-title">{title}</div>
-          <button className="rkpg-x" onClick={onClose} aria-label="닫기">
+          <button
+            ref={closeBtnRef}
+            className="rkpg-x"
+            onClick={onClose}
+            aria-label="닫기"
+            type="button"
+          >
             ✕
           </button>
         </div>
-        <div style={bodyStyle} ref={bodyRef}>{children}</div>
+        <div style={bodyStyle} ref={bodyRef}>
+          {children}
+        </div>
       </aside>
     </div>,
     document.body
@@ -397,11 +444,15 @@ export default function RankingPage() {
     setDrawerOpen(true);
   }, []);
 
+
+  const closeDrawer = useCallback(() => {
+    setDrawerOpen(false);
+    setDrawerTitle("");
+    setDrawerCtx({ type: "", key: "" });
+  }, []);
+
   // 서버 데이터(Consumer)
   const [serverUpdatedAt, setServerUpdatedAt] = useState("");
-  const [dessertTrend, setDessertTrend] = useState([]);
-  const [hotAreas, setHotAreas] = useState([]);
-
   const [bootLoading, setBootLoading] = useState(false);
   const [bootError, setBootError] = useState("");
   const [apiCafes, setApiCafes] = useState([]);
@@ -419,6 +470,8 @@ export default function RankingPage() {
     meta: null,
   });
 
+  const creatorFetchedRef = useRef(false);
+
   // keyword_dict -> category map (menus pill)
   const menuCatMap = useMemo(() => {
     const m = new Map();
@@ -430,6 +483,18 @@ export default function RankingPage() {
     }
     return m;
   }, [kwDict]);
+
+  // dessertTrend / hotAreas: apiCafes + kwDict 기반 파생값(상태 드리프트 방지)
+  const dessertTrend = useMemo(() => {
+    const safe = Array.isArray(apiCafes) ? apiCafes : [];
+    return buildMenuTrendFromCafes(safe, menuCatMap);
+  }, [apiCafes, menuCatMap]);
+
+  const hotAreas = useMemo(() => {
+    const safe = Array.isArray(apiCafes) ? apiCafes : [];
+    return buildHotAreasFromCafes(safe, menuCatMap);
+  }, [apiCafes, menuCatMap]);
+
 
   // Consumer: 전체 메뉴 목록(카페에서 실제 나온 메뉴)
   const allMenus = useMemo(() => {
@@ -578,16 +643,6 @@ export default function RankingPage() {
           // ignore
         }
 
-        const catMap = new Map();
-        for (const r of kwItems) {
-          const k = String(r?.canonical_keyword ?? r?.canonical ?? "").trim();
-          const c = String(r?.category ?? "").trim();
-          if (k) catMap.set(k, c);
-        }
-
-        setDessertTrend(buildMenuTrendFromCafes(list, catMap));
-        setHotAreas(buildHotAreasFromCafes(list, catMap));
-
         // /api/status (옵션)
         fetch("/api/status")
           .then((r) => (r.ok ? r.json() : null))
@@ -612,8 +667,14 @@ export default function RankingPage() {
     };
   }, []);
 
-  // ✅ Creator 데이터 로드: /api/creator/insights
+  // ✅ Creator 데이터 로드: /api/creator/insights (Creator 탭에서만 1회 로드)
   useEffect(() => {
+    if (mode !== "creator") return;
+    if (creatorFetchedRef.current) return;
+
+    // inflight 표시(실패 시 되돌림)
+    creatorFetchedRef.current = true;
+
     let alive = true;
 
     const run = async () => {
@@ -636,6 +697,8 @@ export default function RankingPage() {
         });
       } catch (e) {
         if (!alive) return;
+        // 다음 진입 때 재시도 가능
+        creatorFetchedRef.current = false;
         setCreatorError(e?.message ?? String(e));
       } finally {
         if (alive) setCreatorLoading(false);
@@ -646,7 +709,8 @@ export default function RankingPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [mode]);
+
 
   // Drawer content
   const renderDrawerBody = useCallback(() => {
@@ -1490,7 +1554,7 @@ export default function RankingPage() {
           </>
         )}
 
-        <Drawer open={drawerOpen} title={drawerTitle} onClose={() => setDrawerOpen(false)} bodyRef={drawerBodyRef}>
+        <Drawer open={drawerOpen} title={drawerTitle} onClose={closeDrawer} bodyRef={drawerBodyRef}>
           {renderDrawerBody()}
         </Drawer>
       </main>
