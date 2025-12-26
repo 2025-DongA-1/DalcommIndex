@@ -55,6 +55,24 @@ const UI_TO_SOURCE = {
   "🚗 주차 가능": { must: ["주차가능"], purpose: ["드라이브/산책"] },
 };
 
+// ✅ 지역 이모티콘(표시용) - “값(매핑)”은 그대로, “표시”만 이모지 추가
+const REGION_EMOJI_MAP = {
+  // 광주/구
+  "광주 전체": "🌆",
+  "광주 동구": "🏛️", // 문화/전통 느낌
+  "광주 남구": "🌿", // 주거/힐링 느낌
+  "광주 북구": "🎓", // 대학가 느낌
+  "광주 서구": "🛍️", // 상권 느낌
+  "광주 광산구": "✈️", // 공항/산업 느낌
+
+  // 타 지역
+  나주: "🍐",
+  담양: "🎋",
+  화순: "⛰️",
+};
+
+const getRegionEmoji = (canonicalLabel) => REGION_EMOJI_MAP[canonicalLabel] || "📍";
+
 const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => {
   // ✅ 요청하신 카테고리 구성
   const filters = useMemo(
@@ -251,11 +269,8 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
     });
 
     // ✅ 호환 키도 함께 채움
-    // - atmosphere: theme + mood 로 같이 넣어서(서버가 atmosphere만 보는 경우 대비)
     const atmosphere = Array.from(new Set([...theme, ...mood]));
-    // - menu: dessert 토큰을 같이 넣어서(서버가 menu/menu_tags만 보는 경우 대비)
     const menu = dessert.slice();
-    // - required: must를 그대로(서버에서 must 대신 required만 보는 경우 대비)
     const required = must.slice();
 
     return {
@@ -297,10 +312,12 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
     return chips;
   }, [selected]);
 
+  // ✅ 선택된 칩(상단) 표시값: 지역이면 이모지 포함해서 보여주기
   const displayChipValue = (group, value) => {
     if (group === "지역") {
-      if (value === "광주 전체") return "광주(전체)";
-      if (value.startsWith("광주 ")) return value.replace("광주 ", "");
+      if (value === "광주 전체") return `${getRegionEmoji(value)} 광주(전체)`;
+      if (value.startsWith("광주 ")) return `${getRegionEmoji(value)} ${value.replace("광주 ", "")}`;
+      return `${getRegionEmoji(value)} ${value}`;
     }
     return value;
   };
@@ -331,6 +348,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
 
     return (
       <div className="filter-options-container region-group">
+        {/* ✅ 광주 토글 버튼 */}
         <button
           type="button"
           className={`filter-chip-wrap region-toggle ${isGwangjuOpen ? "is-open" : ""}`}
@@ -339,12 +357,13 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
         >
           <div className="filter-chip-inner">
             <div className="filter-chip-text">
-              <span>광주</span>
+              <span>{REGION_EMOJI_MAP["광주 전체"]} 광주</span>
               <span className={`region-caret ${isGwangjuOpen ? "open" : ""}`}>▾</span>
             </div>
           </div>
         </button>
 
+        {/* ✅ 나주/담양/화순 */}
         {otherRegions.map((option) => {
           const isSelected = selected["지역"]?.has(option);
           return (
@@ -356,12 +375,15 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
               aria-pressed={isSelected}
             >
               <div className="filter-chip-inner">
-                <div className="filter-chip-text">{option}</div>
+                <div className="filter-chip-text">
+                  {getRegionEmoji(option)} {option}
+                </div>
               </div>
             </button>
           );
         })}
 
+        {/* ✅ 광주 하위(구) 옵션 */}
         {isGwangjuOpen && (
           <div className="region-sub-options" role="group" aria-label="광주 구 선택">
             {GWANGJU_SUB_OPTIONS.map(({ label, value }) => {
@@ -375,7 +397,9 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
                   aria-pressed={isSelected}
                 >
                   <div className="filter-chip-inner">
-                    <div className="filter-chip-text">{label}</div>
+                    <div className="filter-chip-text">
+                      {getRegionEmoji(value)} {label}
+                    </div>
                   </div>
                 </button>
               );
