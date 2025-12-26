@@ -101,14 +101,6 @@ id: c.cafe_id ?? c.id ?? c.cafeId ?? c.cafeID ?? null,      // ✅ cafe_id 우�
     y: c.y,
     url: c.url ?? c.mapUrl ?? "",
 
-    images:
-      c.imageUrls ??
-      c.images ??
-      c.images_json ??
-      c.imagesJson ??
-      c.photos ??
-      "",
-
     score: c.score,
 
     phone: c.phone ?? c.tel ?? c.telephone ?? c.contact ?? "",
