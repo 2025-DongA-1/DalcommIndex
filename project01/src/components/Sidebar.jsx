@@ -1,7 +1,7 @@
-// src/components/Sidebar.jsx (카테고리 확장 + 맛(taste) 추가 버전)
+// src/components/Sidebar.jsx
 import React, { useEffect, useMemo, useState } from "react";
 
-// ✅ 지역 값(표시용) -> 서버/데이터 매칭용(여러 표기)으로 확장
+// ✅ 지역 값(표시용) -> 서버/데이터 매칭용(여러 표기)으로 확장 (기존 유지)
 const REGION_ALIASES = {
   "광주 전체": ["광주", "광주광역시", "gwangju"],
   "광주 동구": ["광주 동구", "광주광역시 동구", "동구", "dong-gu"],
@@ -24,120 +24,142 @@ const GWANGJU_SUB_OPTIONS = [
   { label: "광산구", value: "광주 광산구" },
 ];
 
+/**
+ * ✅ UI(노출) -> Source Tags 매핑
+ * - purpose / must / theme / mood / dessert 로 서버에 보내기
+ * - 동시에 기존 호환 키(atmosphere/menu/purpose/required 등)도 같이 채워서 전송
+ */
+const UI_TO_SOURCE = {
+  // 방문 목적
+  "👶 아이와 함께": { purpose: ["가족/키즈"], must: ["키즈/유모차"] },
+  "🐶 반려동물 동반": { purpose: ["반려견동반"], must: ["반려견동반"] },
+  "❤️ 데이트": { purpose: ["데이트"] },
+  "👥 단체 모임": { purpose: ["모임/단체"], must: ["예약/단체"] },
+  "💻 카공/작업": { purpose: ["공부/작업"], must: ["콘센트/와이파이"] },
+
+  // 테마/분위기
+  "🏞️ 뷰 맛집": { theme: ["뷰맛집", "테라스/야외", "루프탑", "정원/가든"] },
+  "🏯 한옥/감성": { theme: ["한옥/전통", "빈티지/레트로"] },
+  "📸 포토존": { theme: ["포토존/인스타"] },
+  "🏢 대형 카페": { theme: ["대형카페"], mood: ["쾌적함"] },
+  "🌿 조용/힐링": { mood: ["조용함", "힐링", "아늑함"] },
+
+  // 디저트
+  "🥐 베이커리/브런치": { dessert: ["베이커리/빵", "브런치/샌드위치"] },
+  "🍰 케이크/디저트": {
+    dessert: ["케이크", "쿠키/구움과자", "마카롱", "초콜릿/디저트특화", "크레페/와플"],
+  },
+  "🍧 빙수/아이스크림": { dessert: ["빙수", "아이스크림/젤라또"] },
+
+  // 필수 조건
+  "🚗 주차 가능": { must: ["주차가능"], purpose: ["드라이브/산책"] },
+};
+
 const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => {
-  // ✅ 카테고리(칩) 확장 + "맛" 그룹 추가
+  // ✅ 요청하신 카테고리 구성
   const filters = useMemo(
     () => ({
       지역: ["광주", "나주", "담양", "화순"],
 
-      분위기: [
-        "넓음",
-        "아늑",
-        "감성",
-        "모던",
-        "조용",
-        "키즈/가족친화",
-        "테라스",
-        "한옥/전통",
-      ],
-
-      맛: [
-        "상큼",
-        "달콤",
-        "담백",
-        "고소",
-        "단짠/짭짤",
-        "쌉싸름/다크",
-        "진함",
-        "촉촉/쫀득",
-      ],
-
       "방문 목적": [
-        "데이트",
-        "가족",
-        "친구",
-        "단체/대관",
-        "혼카페/작업",
-        "반려동물/애견동반",
+        "👶 아이와 함께",
+        "🐶 반려동물 동반",
+        "❤️ 데이트",
+        "👥 단체 모임",
+        "💻 카공/작업",
       ],
 
-      메뉴: [
-        "아메리카노",
-        "라떼",
-        "에이드",
-        "카페라떼",
-        "밀크티",
-        "에스프레소",
-        "딸기라떼",
-        "콜드브루",
-        "초코",
-        "케이크",
-        "바닐라",
-        "아이스크림",
-        "말차",
-        "쿠키",
-        "빙수",
-        "브런치",
-      ],
+      "테마/분위기": ["🏞️ 뷰 맛집", "🏯 한옥/감성", "📸 포토존", "🏢 대형 카페", "🌿 조용/힐링"],
 
+      디저트: ["🥐 베이커리/브런치", "🍰 케이크/디저트", "🍧 빙수/아이스크림"],
 
-      "필수 조건": [
-        "주차 가능",
-        "반려동물"
-      ],
+      "필수 조건": ["🚗 주차 가능"],
     }),
     []
   );
 
   const [selected, setSelected] = useState(() => ({
     지역: new Set(),
-    분위기: new Set(),
-    맛: new Set(),
-    메뉴: new Set(),
     "방문 목적": new Set(),
+    "테마/분위기": new Set(),
+    디저트: new Set(),
     "필수 조건": new Set(),
   }));
 
   const [isGwangjuOpen, setIsGwangjuOpen] = useState(false);
 
+  // ---------- helpers ----------
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const norm = (s) => String(s ?? "").replace(/\s+/g, "").trim();
+
+  const mergeUnique = (...vals) => Array.from(new Set(vals.flatMap(arr)));
+
+  const includesAny = (haystackArr, needlesArr) => {
+    const hs = new Set((haystackArr || []).map(norm));
+    return (needlesArr || []).some((n) => hs.has(norm(n)));
+  };
+
+  // ---------- initialPrefs -> UI 선택 복구 ----------
   useEffect(() => {
     if (!initialPrefs) return;
 
-    // ✅ region은 alias로 넘어올 수 있으니 canonical(광주 전체/광주 동구/나주...)로 되돌림
+    // ✅ region 복구(기존 Sidebar 방식 유지)
     const regionArr = Array.isArray(initialPrefs.region) ? initialPrefs.region : [];
     const regionSet = new Set();
 
-    // 1) aliases로 canonical 찾기
     for (const [canonical, aliases] of Object.entries(REGION_ALIASES)) {
       if (regionArr.some((r) => aliases.includes(r) || r === canonical)) {
         regionSet.add(canonical);
       }
     }
-
-    // 2) 혹시 expand 이전의 값이 그대로 들어와도 대비
     regionArr.forEach((r) => {
       if (r === "광주" || r === "광주광역시" || r === "gwangju") regionSet.add("광주 전체");
     });
 
-    const arr = (v) => (Array.isArray(v) ? v : []);
-    const mergeUnique = (...vals) => Array.from(new Set(vals.flatMap(arr)));
+    // ✅ 서버로 보낸(혹은 서버에서 받은) 키들에서 최대한 복구
+    const purposeArr = mergeUnique(initialPrefs.purpose, initialPrefs.companion_tags);
+    const mustArr = mergeUnique(initialPrefs.must, initialPrefs.required);
+    const themeArr = mergeUnique(initialPrefs.theme, initialPrefs.atmosphere, initialPrefs.atmosphere_tags);
+    const moodArr = mergeUnique(initialPrefs.mood, initialPrefs.atmosphere, initialPrefs.atmosphere_tags);
+    const dessertArr = mergeUnique(initialPrefs.dessert, initialPrefs.menu, initialPrefs.menu_tags);
+
+    const visitSet = new Set();
+    const themeSet = new Set();
+    const dessertSet = new Set();
+    const requiredSet = new Set();
+
+    // UI_TO_SOURCE 기반으로 “토큰 포함” 여부로 UI 옵션을 다시 선택 처리
+    Object.entries(UI_TO_SOURCE).forEach(([uiLabel, map]) => {
+      const hit =
+        (map.purpose && includesAny(purposeArr, map.purpose)) ||
+        (map.must && includesAny(mustArr, map.must)) ||
+        (map.theme && includesAny(themeArr, map.theme)) ||
+        (map.mood && includesAny(moodArr, map.mood)) ||
+        (map.dessert && includesAny(dessertArr, map.dessert));
+
+      if (!hit) return;
+
+      if (filters["방문 목적"]?.includes(uiLabel)) visitSet.add(uiLabel);
+      if (filters["테마/분위기"]?.includes(uiLabel)) themeSet.add(uiLabel);
+      if (filters["디저트"]?.includes(uiLabel)) dessertSet.add(uiLabel);
+      if (filters["필수 조건"]?.includes(uiLabel)) requiredSet.add(uiLabel);
+    });
 
     setSelected({
       지역: regionSet,
-      분위기: new Set(mergeUnique(initialPrefs.atmosphere, initialPrefs.atmosphere_tags)),
-      맛: new Set(mergeUnique(initialPrefs.taste, initialPrefs.taste_tags)),
-      메뉴: new Set(mergeUnique(initialPrefs.menu, initialPrefs.menu_tags)),
-      "방문 목적": new Set(mergeUnique(initialPrefs.purpose, initialPrefs.companion_tags)),
-      "필수 조건": new Set(arr(initialPrefs.required)),
+      "방문 목적": visitSet,
+      "테마/분위기": themeSet,
+      디저트: dessertSet,
+      "필수 조건": requiredSet,
     });
 
-    // ✅ 광주 관련 선택이 있으면 하위 구역 펼쳐놓기(선택)
     const hasGwangju = Array.from(regionSet).some(
       (v) => v === "광주 전체" || String(v).startsWith("광주 ")
     );
     if (hasGwangju) setIsGwangjuOpen(true);
-  }, [initialPrefs]);
+  }, [initialPrefs, filters]);
 
+  // ---------- toggles ----------
   const toggleOption = (group, option) => {
     setSelected((prev) => {
       const next = { ...prev };
@@ -179,17 +201,17 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
   const resetAll = () => {
     setSelected({
       지역: new Set(),
-      분위기: new Set(),
-      맛: new Set(),
-      메뉴: new Set(),
       "방문 목적": new Set(),
+      "테마/분위기": new Set(),
+      디저트: new Set(),
       "필수 조건": new Set(),
     });
     onReset?.();
   };
 
+  // ---------- buildPrefs (핵심) ----------
   const buildPrefs = () => {
-    // ✅ 지역은 alias 확장해서 서버/데이터 매칭용으로 전송
+    // ✅ 지역은 alias 확장해서 서버/데이터 매칭용으로 전송 (기존 유지)
     const regionLabels = Array.from(selected["지역"] || []);
     const regionExpanded = [];
     for (const label of regionLabels) {
@@ -199,24 +221,61 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
       }
     }
 
-    const atmosphere = Array.from(selected["분위기"] || []);
-    const taste = Array.from(selected["맛"] || []);
-    const menu = Array.from(selected["메뉴"] || []);
-    const purpose = Array.from(selected["방문 목적"] || []);
-    const required = Array.from(selected["필수 조건"] || []);
+    const picked = [
+      ...Array.from(selected["방문 목적"] || []),
+      ...Array.from(selected["테마/분위기"] || []),
+      ...Array.from(selected["디저트"] || []),
+      ...Array.from(selected["필수 조건"] || []),
+    ];
+
+    const purpose = [];
+    const must = [];
+    const theme = [];
+    const mood = [];
+    const dessert = [];
+
+    const pushUnique = (arr, vals) => {
+      (vals || []).forEach((v) => {
+        if (!arr.includes(v)) arr.push(v);
+      });
+    };
+
+    picked.forEach((uiLabel) => {
+      const map = UI_TO_SOURCE[uiLabel];
+      if (!map) return;
+      pushUnique(purpose, map.purpose);
+      pushUnique(must, map.must);
+      pushUnique(theme, map.theme);
+      pushUnique(mood, map.mood);
+      pushUnique(dessert, map.dessert);
+    });
+
+    // ✅ 호환 키도 함께 채움
+    // - atmosphere: theme + mood 로 같이 넣어서(서버가 atmosphere만 보는 경우 대비)
+    const atmosphere = Array.from(new Set([...theme, ...mood]));
+    // - menu: dessert 토큰을 같이 넣어서(서버가 menu/menu_tags만 보는 경우 대비)
+    const menu = dessert.slice();
+    // - required: must를 그대로(서버에서 must 대신 required만 보는 경우 대비)
+    const required = must.slice();
 
     return {
-      // 기존 키(호환)
+      // 지역(기존 유지)
       region: regionExpanded,
-      atmosphere,
-      taste,
-      menu,
+
+      // ✅ 요청하신 “Source Tags” 키들
       purpose,
+      must,
+      theme,
+      mood,
+      dessert,
+
+      // ✅ 기존 키(호환)
+      atmosphere,
+      menu,
       required,
 
-      // ✅ CSV 컬럼명 기반 키도 함께 제공(필터링 구현 방식에 따라 사용)
+      // ✅ CSV 컬럼명 기반 키(호환)
       atmosphere_tags: atmosphere,
-      taste_tags: taste,
       menu_tags: menu,
       companion_tags: purpose,
     };
@@ -224,10 +283,9 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
 
   const hasSelection =
     (selected["지역"]?.size || 0) +
-      (selected["분위기"]?.size || 0) +
-      (selected["맛"]?.size || 0) +
-      (selected["메뉴"]?.size || 0) +
       (selected["방문 목적"]?.size || 0) +
+      (selected["테마/분위기"]?.size || 0) +
+      (selected["디저트"]?.size || 0) +
       (selected["필수 조건"]?.size || 0) >
     0;
 
@@ -332,18 +390,9 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
     group === "지역" ? renderRegionChips(options) : renderStandardChips(group, options);
 
   return (
-    <aside
-  className="sidebar"
-  style={{ display: isOpen ? "block" : "none", height: "100vh" }}
->
-      <div
-  className="sidebar-layout"
-  style={{ height: "100%", display: "flex", flexDirection: "column" }}
->
-        <div
-  className="sidebar-content-wrap"
-  style={{ height: "100%", display: "flex", flexDirection: "column" }}
->
+    <aside className="sidebar" style={{ display: isOpen ? "block" : "none", height: "100vh" }}>
+      <div className="sidebar-layout" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <div className="sidebar-content-wrap" style={{ height: "100%", display: "flex", flexDirection: "column" }}>
           {/* 1. 필터 헤더 */}
           <div className="sidebar-header">
             <div className="filter-title-group">
@@ -393,34 +442,31 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
           </div>
 
           {/* 3. 필터 그룹 목록 */}
-        <div
-  className="sidebar-scroll-area"
-  style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
->
-          {Object.entries(filters).map(([title, options]) => (
-            <div key={title} className="filter-group">
+          <div className="sidebar-scroll-area" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+            {Object.entries(filters).map(([title, options]) => (
+              <div key={title} className="filter-group">
                 <div className="filter-group-title">
-                <div className="text">{title}</div>
+                  <div className="text">{title}</div>
+                </div>
+                {renderChips(title, options)}
               </div>
-              {renderChips(title, options)}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
 
-        {/* 4. 하단 검색 버튼 */}
-        <div className="sidebar-footer" style={{ marginTop: "auto" }}>
-          <button
-            type="button"
-            className="sidebar-search-btn"
-            onClick={() => onSearch?.(buildPrefs())}
-            disabled={!hasSelection}
-            title={!hasSelection ? "필터를 하나 이상 선택해 주세요" : "선택한 필터로 검색"}
-          >
-            <span className="icon">🔍</span>
-            <span className="text">검색</span>
-          </button>
+          {/* 4. 하단 검색 버튼 */}
+          <div className="sidebar-footer" style={{ marginTop: "auto" }}>
+            <button
+              type="button"
+              className="sidebar-search-btn"
+              onClick={() => onSearch?.(buildPrefs())}
+              disabled={!hasSelection}
+              title={!hasSelection ? "필터를 하나 이상 선택해 주세요" : "선택한 필터로 검색"}
+            >
+              <span className="icon">🔍</span>
+              <span className="text">검색</span>
+            </button>
+          </div>
         </div>
-      </div>
       </div>
     </aside>
   );
