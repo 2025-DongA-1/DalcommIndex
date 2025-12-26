@@ -112,6 +112,121 @@ function buildHotRoadAreasFromCafes(cafes, topN = 5) {
   }));
 }
 
+function normalizeToken(v) {
+  const s = String(v || "").trim();
+  return s.replace(/^#/, "").trim();
+}
+
+function hashStringToInt(str) {
+  // simple deterministic hash (32-bit)
+  let h = 2166136261;
+  const s = String(str || "");
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededShuffle(arr, seed) {
+  const out = [...safeArray(arr)];
+  const rnd = mulberry32(seed >>> 0);
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    const tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return out;
+}
+
+// ✅ 메인 검색창 아래 해시태그: "추출 키워드" 기반으로 가변 생성
+// - desserts(메뉴 태그) 상위 N개 + why(상위 키워드) 상위 N개를 섞어서 6개 노출
+// - 데이터가 고정이어도 "항상 상위 3개"로 고정되지 않도록, 상위 풀(topK)에서 시드 기반 셔플 후 샘플링
+function buildDynamicHashtagChips(
+  cafes,
+  regionKey,
+  { dessertMax = 3, keywordMax = 3, dessertPool = 25, keywordPool = 35, seed = 0 } = {}
+) {
+  const list = safeArray(cafes).filter((c) => {
+    if (!regionKey || regionKey === "all") return true;
+    return String(c?.region) === String(regionKey);
+  });
+
+  const countFrom = (getTokens) => {
+    const m = new Map();
+    for (const c of list) {
+      const toks = safeArray(getTokens?.(c));
+      // ✅ 카페 단위 중복 제거(한 카페에서 같은 키워드 3번 나와도 1회로 카운트)
+      const uniqSet = new Set();
+      for (const raw of toks) {
+        const t = normalizeToken(raw);
+        if (!t) continue;
+        if (t.length < 2) continue;
+        if (/^\d+$/.test(t)) continue;
+        uniqSet.add(t);
+      }
+      for (const t of uniqSet) m.set(t, (m.get(t) || 0) + 1);
+    }
+    return m;
+  };
+
+  const topN = (m, n) =>
+    [...m.entries()]
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), "ko"))
+      .slice(0, n)
+      .map(([k]) => k);
+
+  const dessertMap = countFrom((c) => c?.desserts);
+  const keywordMap = countFrom((c) => c?.why);
+
+  // ✅ "의미 있는" 후보 풀을 넉넉히 만든 뒤, 시드 셔플로 3개씩 뽑아서 고정 현상 제거
+  const dessertPoolList = topN(dessertMap, dessertPool);
+  const keywordPoolList = topN(keywordMap, keywordPool);
+
+  const desserts = seededShuffle(dessertPoolList, (seed ^ 0x1a2b3c4d) >>> 0);
+  const keywords = seededShuffle(keywordPoolList, (seed ^ 0x9e3779b9) >>> 0);
+
+  const out = [];
+  const used = new Set();
+
+  for (const d of desserts) {
+    if (used.has(d)) continue;
+    used.add(d);
+    out.push({ label: d, kind: "dessert" });
+    if (out.filter((x) => x.kind === "dessert").length >= dessertMax) break;
+  }
+  for (const k of keywords) {
+    if (used.has(k)) continue;
+    used.add(k);
+    out.push({ label: k, kind: "keyword" });
+    if (out.filter((x) => x.kind === "keyword").length >= keywordMax) break;
+  }
+
+  // ✅ 부족하면 keywordMap에서 추가로 채우기
+  if (out.length < dessertMax + keywordMax) {
+    const more = seededShuffle(topN(keywordMap, Math.max(20, dessertMax + keywordMax + 20)), (seed ^ 0x31415926) >>> 0);
+    for (const t of more) {
+      if (out.length >= dessertMax + keywordMax) break;
+      if (used.has(t)) continue;
+      used.add(t);
+      out.push({ label: t, kind: "keyword" });
+    }
+  }
+
+  return out.slice(0, dessertMax + keywordMax);
+}
+
 export default function Main() {
   const navigate = useNavigate();
 
@@ -186,6 +301,7 @@ export default function Main() {
 
   const [cafesSnapshot, setCafesSnapshot] = useState([]);
   const [themeSeed, setThemeSeed] = useState(0);
+  const [hashtagSeed, setHashtagSeed] = useState(() => Math.floor(Math.random() * 1_000_000_000));
 
   const [openCafeId, setOpenCafeId] = useState(null);
   const [openCafeLoading, setOpenCafeLoading] = useState(false);
@@ -309,6 +425,28 @@ export default function Main() {
   const [region, setRegion] = useState(regionOptions[0].value);
   const [keyword, setKeyword] = useState("");
 
+  const fallbackHashtags = useMemo(() => ["감성", "조용함", "포토존", "주문케이크", "비건", "가족"], []);
+  const hashtagChips = useMemo(() => {
+    // ✅ 데이터가 고정이어도 해시태그가 항상 '상위 몇 개'로 고정되지 않게, 날짜/지역/seed 기반으로 셔플
+    const now = new Date();
+    const daySeed = Math.floor(
+      (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(now.getFullYear(), 0, 1)) / 86400000
+    );
+    const seed = (daySeed ^ hashStringToInt(region) ^ (themeSeed * 131) ^ hashtagSeed) >>> 0;
+
+    const chips = buildDynamicHashtagChips(cafesSnapshot, region, {
+      dessertMax: 3,
+      keywordMax: 3,
+      dessertPool: 25,
+      keywordPool: 35,
+      seed,
+    });
+    if (chips && chips.length) return chips;
+
+    // ✅ 데이터가 아직 없으면 기존 고정 해시태그 폴백
+    return fallbackHashtags.map((t) => ({ label: t, kind: "keyword" }));
+  }, [cafesSnapshot, region, fallbackHashtags, themeSeed, hashtagSeed]);
+
   const regionLabelMap = useMemo(() => {
     const m = new Map();
     for (const opt of regionOptions) m.set(opt.value, opt.label);
@@ -427,7 +565,7 @@ export default function Main() {
       {
         key: "road",
         kicker: "오늘의 탐방 코스",
-        title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle} 카페 탐방` : "오늘은 어디로 갈까?",
+        title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle}로 카페 탐방` : "오늘은 어디로 갈까?",
         sub: "최근 언급/다양성이 높은 거리 기반",
         cta: "거리 카페 보기 →",
         onViewAll: () =>
@@ -498,14 +636,20 @@ export default function Main() {
             </div>
 
             <div className="chip-row">
-              {["감성", "조용함", "포토존", "주문케이크", "비건", "가족"].map((t) => (
+              {hashtagChips.map((ch) => (
                 <button
-                  key={t}
+                  key={`${ch.kind}:${ch.label}`}
                   type="button"
                   className="chip"
-                  onClick={() => navigate(`/search?region=${encodeURIComponent(region)}&q=${encodeURIComponent(t)}`)}
+                  onClick={() => {
+                    if (ch.kind === "dessert") {
+                      navigate(toSearchUrl({ desserts: ch.label, sort: "relevance" }));
+                    } else {
+                      navigate(toSearchUrl({ q: ch.label, sort: "relevance" }));
+                    }
+                  }}
                 >
-                  #{t}
+                  #{ch.label}
                 </button>
               ))}
             </div>
@@ -525,7 +669,11 @@ export default function Main() {
             <button
               type="button"
               className="linkish"
-              onClick={() => setThemeSeed((s) => (Number.isFinite(s) ? s + 1 : 1))}
+              onClick={() => {
+                setThemeSeed((s) => (Number.isFinite(s) ? s + 1 : 1));
+                // ✅ '다른 조합 보기'에 맞춰 해시태그도 같이 회전
+                setHashtagSeed((x) => (Number.isFinite(x) ? x + 1 : 1));
+              }}
               title="추천 조합을 바꿔보기"
             >
               다른 조합 보기 ↻
