@@ -332,9 +332,18 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
     group === "지역" ? renderRegionChips(options) : renderStandardChips(group, options);
 
   return (
-    <aside className="sidebar" style={{ display: isOpen ? "block" : "none" }}>
-      <div className="sidebar-layout">
-        <div className="sidebar-content-wrap">
+    <aside
+  className="sidebar"
+  style={{ display: isOpen ? "block" : "none", height: "100vh" }}
+>
+      <div
+  className="sidebar-layout"
+  style={{ height: "100%", display: "flex", flexDirection: "column" }}
+>
+        <div
+  className="sidebar-content-wrap"
+  style={{ height: "100%", display: "flex", flexDirection: "column" }}
+>
           {/* 1. 필터 헤더 */}
           <div className="sidebar-header">
             <div className="filter-title-group">
@@ -384,7 +393,10 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
           </div>
 
           {/* 3. 필터 그룹 목록 */}
-        <div className="sidebar-scroll-area">
+        <div
+  className="sidebar-scroll-area"
+  style={{ flex: 1, minHeight: 0, overflowY: "auto" }}
+>
           {Object.entries(filters).map(([title, options]) => (
             <div key={title} className="filter-group">
                 <div className="filter-group-title">
@@ -396,7 +408,7 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
         </div>
 
         {/* 4. 하단 검색 버튼 */}
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" style={{ marginTop: "auto" }}>
           <button
             type="button"
             className="sidebar-search-btn"
