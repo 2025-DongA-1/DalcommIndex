@@ -232,39 +232,52 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
   let simpleResults = [];
   try {
     simpleResults = results.map((cafe) => {
-      let hits = [];
-      
-      // 1. 실제 빈도수 데이터(keyword_counts_json) 파싱 시도
-      if (cafe.keyword_counts_json) {
-         try {
-           const parsed = JSON.parse(cafe.keyword_counts_json);
-           if (Array.isArray(parsed)) {
-             // 형식: [["키워드", 10], ...] 또는 [{text:"키워드", value:10}, ...]
-             hits = parsed.map(p => {
-               if (Array.isArray(p)) return { label: p[0], count: p[1] };
-               return { label: p.text || p.keyword, count: p.value || p.count };
-             });
-           } else if (typeof parsed === 'object') {
-             // 형식: {"키워드": 10, ...}
-             hits = Object.entries(parsed).map(([k,v]) => ({ label: k, count: v }));
-           }
-         } catch(e) { /* 파싱 실패 시 무시 */ }
+    // 1) 실제 빈도수 데이터(keyword_counts_json) 파싱/정규화
+    let hits = [];
+
+    const rawKC = cafe.keyword_counts_json; // string | array | object 가능
+
+    if (rawKC) {
+      try {
+        const parsed = (typeof rawKC === "string") ? JSON.parse(rawKC) : rawKC;
+
+        if (Array.isArray(parsed)) {
+          // [["키워드", 10], ...] 또는 [{text:"키워드", value:10}, ...]
+          hits = parsed.map((p) => {
+            if (Array.isArray(p)) return { label: p[0], count: Number(p[1]) };
+            return { label: p.text || p.keyword, count: Number(p.value ?? p.count) };
+          });
+        } else if (parsed && typeof parsed === "object") {
+          // {"키워드": 10, ...}
+          hits = Object.entries(parsed).map(([k, v]) => ({ label: k, count: Number(v) }));
+        }
+      } catch (e) {
+        // 무시하고 다음 단계로
       }
+    }
+
+    // 1-b) keyword_hits에 이미 실제 count가 들어오는 경우( recommend.js: {text,value} )도 그대로 사용
+    if ((!hits || hits.length === 0) && Array.isArray(cafe.keyword_hits)) {
+      hits = cafe.keyword_hits.map((h) => ({
+        label: h.label ?? h.text ?? "",
+        count: Number(h.count ?? h.value ?? 0),
+      }));
+    }
+
+    // 최종 필터
+    hits = hits.filter((h) => h.label && Number.isFinite(h.count) && h.count > 0);
 
       // 2. 만약 실제 빈도수가 없으면, 단순 키워드 목록(keyword_hits or keywords)을 사용하여 가상의 빈도수 생성 (Fallback)
       //    (예: 첫 번째 키워드=10회, 두 번째=9회 ... 순서가 중요도이므로)
-      const hasRealCounts = hits.some(h => h.count > 0);
+      const hasRealCounts = hits.some((h) => h.count > 0);
+
       if (!hasRealCounts) {
-         const fallbackSource = (Array.isArray(cafe.keyword_hits) && cafe.keyword_hits.length > 0)
-            ? cafe.keyword_hits
-            : (Array.isArray(cafe.keywords) ? cafe.keywords : []);
-            
-         hits = fallbackSource.map((k, idx) => {
-             const label = (typeof k === 'string') ? k : (k.label || k.text || "");
-             // 순위 기반 가상 카운트 (최대 15회 ~ 최소 5회)
-             const fakeCount = Math.max(5, 15 - idx); 
-             return { label, count: fakeCount };
-         });
+        const fallbackSource = Array.isArray(cafe.keywords) ? cafe.keywords : [];
+        hits = fallbackSource.map((k, idx) => {
+          const label = (typeof k === "string") ? k : (k.label || k.text || "");
+          const fakeCount = Math.max(5, 15 - idx);
+          return { label, count: fakeCount };
+        });
       }
 
       // 3. 데이터 병합 (hits가 우선)
