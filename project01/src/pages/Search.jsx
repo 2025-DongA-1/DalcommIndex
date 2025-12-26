@@ -307,7 +307,8 @@ export default function Search() {
   // URL -> 초기값
   const initialRegions = parseList(sp.get("region"));
   const initialQ = sp.get("q") ?? "";
-  const initialSort = sp.get("sort") ?? "relevance"; // relevance | score | rating | reviews
+  const initialSortRaw = sp.get("sort") ?? "relevance";
+const initialSort = initialSortRaw === "score" ? "relevance" : initialSortRaw;
   const initialThemes = (sp.get("themes") ?? "").split(",").filter(Boolean);
   const initialDesserts = (sp.get("desserts") ?? "").split(",").filter(Boolean);
   const initialMoods = (sp.get("moods") ?? "").split(",").filter(Boolean);
@@ -395,7 +396,8 @@ const isDraft = draftKeyNoPage !== appliedKeyNoPage;
 
     setRegions(parseList(params.get("region")));
     setQ(params.get("q") ?? "");
-    setSort(params.get("sort") ?? "relevance");
+    const nextSortRaw = params.get("sort") ?? "relevance";
+setSort(nextSortRaw === "score" ? "relevance" : nextSortRaw);
     setThemes((params.get("themes") ?? "").split(",").filter(Boolean));
     setDesserts((params.get("desserts") ?? "").split(",").filter(Boolean));
     
@@ -514,7 +516,7 @@ const applySearch = (e) => {
           excerpt: x.excerpt || "",
           keywords: parseKeywords(x.excerpt),  
           neighborhood: x.neighborhood || "",
-          score: Number(x.score || 0) || 0,
+
         }));
 
         setResults(normalized);
@@ -927,7 +929,6 @@ const resetFilters = () => {
               <span className="sr-label">정렬</span>
               <select value={sort} onChange={(e) => setSort(e.target.value)}>
                 <option value="relevance">관련도</option>
-                <option value="score">달콤지수 높은 순</option>
                 <option value="reviews">리뷰 많은 순</option>
               </select>
             </label>
@@ -1154,10 +1155,6 @@ const resetFilters = () => {
                   <div className="info">
                     <div className="row1">
                       <div className="name">{x.name}</div>
-                      <div className="score">
-                        <span className="badge">달콤지수</span>
-                        <span className="score-num">{Math.round(x.score)}</span>
-                      </div>
                     </div>
 
                     <div className="row2">
