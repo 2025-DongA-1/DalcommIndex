@@ -229,8 +229,8 @@ function matchMenuKeyword(cafe, wantMenu = []) {
     .join(" ")
     .toLowerCase();
 
-  // 메뉴는 AND (모두 포함)
-  return wantMenu.every((m) => {
+  // 메뉴/디저트는 OR (하나라도 포함)
+  return wantMenu.some((m) => {
     const key = normalizeStr(m).toLowerCase();
     if (!key) return true;
     return hay.includes(key);
@@ -302,7 +302,11 @@ export function recommendCafes(prefs, cafes, topK = 5) {
   const wantAtmos = normalizePrefList(prefs.atmosphere);
   const wantTaste = normalizePrefList(prefs.taste);
   const wantPurpose = normalizePrefList(prefs.purpose);
-  const wantMenu = normalizePrefList(prefs.menu);
+  const wantMenu = normalizePrefList([
+    ...(toArray(prefs.menu)),
+    ...(toArray(prefs.dessert)),
+    ...(toArray(prefs.menu_tags)),
+  ]);
   const wantRequired = normalizePrefList(prefs.required);
 
   const wantAtmosSet = new Set(wantAtmos);

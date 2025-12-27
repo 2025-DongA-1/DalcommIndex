@@ -46,8 +46,15 @@ function normalizeOneShotToken(x) {
 }
 
 function addNormalized(set, raw) {
-  const v = normalizeOneShotToken(raw);
-  if (v) set.add(v);
+  const original = normalizeStr(raw);
+  if (!original) return;
+
+  // ✅ 1) cafe_tags 원본 토큰 그대로 저장 (Sidebar 필터 1:1 매칭용)
+  set.add(original);
+
+  // ✅ 2) 기존 축약/별칭 토큰도 같이 저장 (검색어(q) 매칭용 보강)
+  const alias = normalizeOneShotToken(original);
+  if (alias && alias !== original) set.add(alias);
 }
 
 function normalizeStr(v) {
@@ -80,7 +87,7 @@ function toTokenSet(v) {
   const arr = Array.isArray(j)
     ? j
     : typeof j === "string"
-      ? j.split(/[|,]/g)
+      ? j.split(/[|,\/]/g) 
       : [];
   return new Set(arr.map(normalizeStr).filter(Boolean));
 }
@@ -149,6 +156,12 @@ export async function loadCafesFromDB() {
       ON t.cafe_id = s1.cafe_id AND t.mx = s1.updated_at
     ) s ON s.cafe_id = c.cafe_id
   `);
+
+  const addRawAndNorm = (set, raw) => {
+    const r = normalizeStr(raw);
+    if (r) set.add(r);      // ✅ "쿠키/구움과자", "조용함" 같은 원문 유지
+    addNormalized(set, raw); // ✅ "쿠키", "조용" 같은 정규화 토큰도 유지
+  };
 
   return rows.map((r) => {
     const scoreBy = safeJsonParse(r.score_by_category_json, {});
@@ -244,6 +257,7 @@ export async function loadCafesFromDB() {
       atmosphereSet,
       tasteSet,
       purposeSet,
+      mustSet,
 
       menu: [...menuTags].join(", "),
       main_dessert: [...menuTags][0] || "",

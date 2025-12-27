@@ -572,7 +572,7 @@ function splitPipeTags(v) {
   const s = normalizeStr(v);
   if (!s) return [];
   return s
-    .split("|")
+    .split(/[|/,]/g)
     .map((x) => normalizeStr(x))
     .filter(Boolean);
 }
@@ -1092,6 +1092,9 @@ app.get("/api/cafes", async (req, res) => {
     const regions = parseCsv(req.query.region).filter((r) => r !== "all");
     const themes = parseCsv(req.query.themes);
     const desserts = parseCsv(req.query.desserts);
+    const purposes = parseCsv(req.query.purpose);
+    const moods = parseCsv(req.query.moods);
+    const musts = parseCsv(req.query.must);
 
     const q = normalizeStr(req.query.q || "").toLowerCase();
     const sort = normalizeStr(req.query.sort || "relevance");
@@ -1239,11 +1242,26 @@ app.get("/api/cafes", async (req, res) => {
       });
     }
 
-    // ✅ themes/desserts: 복수 선택이면 OR (some)
-    //    (카테고리 간에는 AND로 조합됨: region + themes + desserts + q)
-    if (themes.length) items = items.filter((x) => themes.some((t) => (x.themes || []).includes(t)));
-    if (desserts.length) items = items.filter((x) => desserts.some((d) => (x.desserts || []).includes(d)));
-
+    // ✅ cafe_tags(one-shot) 기반 필터: 카테고리 내 OR, 카테고리 간 AND
+    if (themes.length) {
+      items = items.filter((x) => themes.some((t) => (x.oneshot?.theme || []).includes(t)));
+    }
+    if (desserts.length) {
+      const want = desserts.map(normalizeStr).filter(Boolean);
+      items = items.filter((x) => {
+        const have = new Set((x.oneshot?.dessert || []).map(normalizeStr));
+        return want.some((d) => have.has(d));
+      });
+    }
+    if (purposes.length) {
+      items = items.filter((x) => purposes.some((p) => (x.oneshot?.purpose || []).includes(p)));
+    }
+    if (moods.length) {
+      items = items.filter((x) => moods.some((m) => (x.oneshot?.mood || []).includes(m)));
+    }
+    if (musts.length) {
+      items = items.filter((x) => musts.some((m) => (x.oneshot?.must || []).includes(m)));
+    }
     if (sort === "score") items.sort((a, b) => (b.score || 0) - (a.score || 0));
     if (sort === "reviews") items.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
     if (sort === "relevance") items.sort((a, b) => (b.score || 0) - (a.score || 0));
