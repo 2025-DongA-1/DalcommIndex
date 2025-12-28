@@ -215,6 +215,10 @@ export async function loadCafesFromDB() {
       }
     }
 
+    const dateScore = Number(scoreBy?.date_score ?? scoreBy?.dateScore ?? 0) || 0;
+    const studyScore = Number(scoreBy?.study_score ?? scoreBy?.studyScore ?? 0) || 0;
+    const coffeeScore = Number(scoreBy?.coffee_score ?? scoreBy?.coffeeScore ?? 0) || 0;
+    const dessertScore = Number(scoreBy?.dessert_score ?? scoreBy?.dessertScore ?? 0) || 0;
 
     const searchText = [
       name,
@@ -265,10 +269,10 @@ export async function loadCafesFromDB() {
       parking,
 
       // 점수는 cafe_stats.score_total을 사용
-      coffee_score: 0,
-      dessert_score: 0,
-      date_score: 0,
-      study_score: 0,
+      coffee_score: coffeeScore,
+      dessert_score: dessertScore,
+      date_score: dateScore,
+      study_score: studyScore,
       popularity_score: Number(r.score_total || 0) || 0,
       score: Number(r.score_total || 0) || 0,
 

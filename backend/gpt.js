@@ -336,7 +336,8 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
   }
 
   const targetName = prefs?.target || simpleResults.find(r => userMessage.includes(r.name))?.name;
-  
+  const userPurpose = Array.isArray(prefs?.purpose) ? prefs.purpose.join(", ") : "";
+
   let currentIntent = "recommendation";
   if (userMessage.includes("비교") || userMessage.includes("차이")) currentIntent = "comparison";
   else if (targetName && simpleResults.length > 0) currentIntent = "detail";
@@ -375,6 +376,9 @@ ${JSON.stringify(simpleResults, null, 2)}
 4. **공통 사항**:
    - 말투는 친절한 "~해요"체를 사용해.
    - 질문(예: "어떠신가요?")을 절대 덧붙이지 마.
+   - 사용자의 목적: ${userPurpose || "없음"}
+   - 목적에 포함된 항목(예: '데이트')을 최우선으로 반영해 서술해.
+   - 목적이 '데이트'면 '친구/모임/수다/단체' 같은 다른 목적 단어는 사용하지 마.
   `.trim();
 
   try {

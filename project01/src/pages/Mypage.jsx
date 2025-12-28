@@ -7,7 +7,7 @@ const TABS = [
   { key: "profile", label: "회원정보 수정" },
   { key: "favorites", label: "즐겨찾기" },
   { key: "reviews", label: "리뷰 내역" },
-  { key: "settings", label: "설정" },
+  { key: "settings", label: "회원 탈퇴" },
 ];
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -554,42 +554,11 @@ export default function Mypage() {
 
           {tab === "settings" && (
             <>
-              <div className="card-title">설정</div>
-              <div className="card-subtitle">알림/공개 범위/탈퇴 등을 관리합니다.</div>
+              <div className="card-title">회원 탈퇴</div>
+              {/* <div className="card-subtitle">회원 탈퇴</div> */}
 
               <div style={{ display: "grid", gap: 10 }}>
-                <div style={itemCard}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>마케팅 수신</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>이벤트/소식 알림을 받습니다.</div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={settings.marketing}
-                      onChange={(e) => setSettings((s) => ({ ...s, marketing: e.target.checked }))}
-                    />
-                  </div>
-                </div>
-
-                <div style={itemCard}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>프로필 공개</div>
-                      <div style={{ fontSize: 12, color: "#666", marginTop: 2 }}>리뷰에 닉네임 표시 여부</div>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={settings.profilePublic}
-                      onChange={(e) => setSettings((s) => ({ ...s, profilePublic: e.target.checked }))}
-                    />
-                  </div>
-                </div>
-
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button type="button" style={btnPrimary} disabled={loading} onClick={onSaveSettings}>
-                    {loading ? "저장 중..." : "설정 저장"}
-                  </button>
                   <button type="button" style={btnDanger} disabled={loading} onClick={onDeleteAccount}>
                     회원 탈퇴
                   </button>

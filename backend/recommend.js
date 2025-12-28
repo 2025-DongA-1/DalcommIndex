@@ -67,6 +67,30 @@ function normalizeTag(t) {
   x = x.replace(/작업\s*하기\s*좋은/g, "작업");
   x = x.replace(/공부\s*하기\s*좋은/g, "공부");
 
+  const compact = x.replace(/\s+/g, "");
+
+  // 데이트 계열
+  if (
+    compact === "연인" ||
+    compact === "커플" ||
+    compact === "로맨틱" ||
+    compact === "기념일" ||
+    compact.startsWith("커플") ||
+    compact.startsWith("연인")
+  ) {
+    return "데이트";
+  }
+
+  // 친구/모임 계열(원하면)
+  if (
+    compact === "모임" ||
+    compact === "수다" ||
+    compact === "단체" ||
+    compact.startsWith("친구")
+  ) {
+    return "모임";
+  }
+
   // 목적/메뉴 쪽 흔한 동의어
   if (x === "카페투어") x = "카페 투어";
   if (x === "베이커리") x = "빵";
@@ -344,9 +368,21 @@ export function recommendCafes(prefs, cafes, topK = 5) {
     return true;
   });
 
-  // ✅ AND 결과가 0개면: 랜덤 대신 “점수 기반 soft fallback”
+  // ✅ 개선: AND가 0이면 "목적"만이라도 유지한 후보군을 우선 사용
   if (afterAndFilter.length > 0) {
     candidates = afterAndFilter;
+  } else {
+    // 목적이 있으면 목적만 강제한 후보군으로 1차 fallback
+    if (wantPurposeSet.size) {
+      const byPurpose = candidates.filter((cafe) => {
+        const purposeSet = new Set(
+          [...(cafe.purposeSet || new Set())].map(normalizeTag).filter(Boolean)
+        );
+        return includesAllTags(purposeSet, wantPurposeSet);
+      });
+
+      if (byPurpose.length > 0) candidates = byPurpose;
+    }
   }
 
   function scoreCafeDetailed(cafe) {
