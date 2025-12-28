@@ -36,8 +36,11 @@ const REGION_ALIAS_MAP = {
   "광주 광산구": "gwangsan-gu",
   광산구: "gwangsan-gu",
 
+  화순: "hwasun",
   화순군: "hwasun",
+  담양: "damyang",
   담양군: "damyang",
+  나주: "naju",
   나주시: "naju",
 };
 
@@ -134,6 +137,68 @@ function parseKeywords(raw) {
     .filter(Boolean);
 }
 
+// ✅ Search 페이지(서버 목록)에서도 Sidebar 필터가 동일하게 동작하도록: "프론트에서" 매칭
+// - 지도 페이지는 보통 프론트에서 tags 텍스트로 필터링하는데, Search는 서버에 파라미터를 넘기면 일부가 무시/불일치할 수 있음
+const normalizeForMatch = (s) =>
+  String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+
+const tokenVariants = (token) => {
+  const base = normalizeForMatch(token);
+  if (!base) return [];
+  // "콘센트/와이파이"처럼 묶인 토큰도 매칭되게 분해
+  const parts = base.split(/[\/|·]/).filter(Boolean);
+  return Array.from(new Set([base, ...parts]));
+};
+
+const pickArr = (v) => (Array.isArray(v) ? v : []);
+
+const buildHayForMatch = (x) => {
+  const chunks = [
+    x?.name,
+    x?.neighborhood,
+    x?.excerpt,
+    x?._address,
+    x?._regionText,
+    x?._oneshotText,
+    pickArr(x?.why).join(" "),
+    pickArr(x?.keywords).join(" "),
+    pickArr(x?.atmosphere_tags).join(" "),
+    pickArr(x?.menu_tags).join(" "),
+    pickArr(x?.companion_tags).join(" "),
+    pickArr(x?.required).join(" "),
+    pickArr(x?.must).join(" "),
+    pickArr(x?.purpose).join(" "),
+    pickArr(x?.theme).join(" "),
+    pickArr(x?.mood).join(" "),
+    pickArr(x?.dessert).join(" "),
+  ];
+  return normalizeForMatch(chunks.filter(Boolean).join(" "));
+};
+
+const matchAnyToken = (x, tokens) => {
+  const list = (tokens || []).filter(Boolean);
+  if (!list.length) return true;
+
+  const hay = buildHayForMatch(x);
+  if (!hay) return false;
+
+  return list.some((t) => tokenVariants(t).some((v) => v && hay.includes(v)));
+};
+
+const applyClientFilters = (items, { themes, desserts, purposes, moods, musts }) => {
+  const src = Array.isArray(items) ? items : [];
+  return src.filter(
+    (x) =>
+      matchAnyToken(x, themes) &&
+      matchAnyToken(x, desserts) &&
+      matchAnyToken(x, purposes) &&
+      matchAnyToken(x, moods) &&
+      matchAnyToken(x, musts)
+  );
+};
+
 // Sidebar region 확장값(동구/광주/광주광역시/코드 등) 중에서 Search API가 쓰는 code만 추출
 const REGION_CODE_SET = new Set([
   "dong-gu",
@@ -159,6 +224,23 @@ export default function Search() {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
   const spKey = sp.toString();
+
+  // ✅ 서버 요청 파라미터는 region/q/sort만 사용(나머지 Sidebar 필터는 프론트에서 적용)
+  // - Search 페이지에서 purpose/moods/must/themes/desserts를 서버로 넘기면(또는 토큰이 완전히 일치하지 않으면) 일부 필터가 "안 먹는" 현상이 생길 수 있음
+  const serverFetchKey = useMemo(() => {
+    const paramsIn = new URLSearchParams(spKey);
+    const urlRegions = parseList(paramsIn.get("region"));
+    const urlQ = (paramsIn.get("q") ?? "").trim();
+    const urlSort = paramsIn.get("sort") ?? "relevance";
+
+    const params = new URLSearchParams();
+    if (urlRegions.length) params.set("region", urlRegions.join(","));
+    if (urlQ) params.set("q", urlQ);
+    if (urlSort) params.set("sort", urlSort);
+
+    return params.toString();
+  }, [spKey]);
+
 
   const location = useLocation();
   const navType = useNavigationType();
@@ -258,36 +340,16 @@ export default function Search() {
     pushParams({ page: 1, q, sort });
   };
 
-  // ✅ URL(spKey) 기반으로 /api/cafes 호출
+  // ✅ /api/cafes 호출은 "서버가 확실히 이해하는" 파라미터만 사용 (region/q/sort)
+//    나머지 Sidebar 필터(purpose/moods/must/themes/desserts)는 아래에서 프론트 필터로 적용
   useEffect(() => {
     let alive = true;
-
-    const paramsIn = new URLSearchParams(spKey);
-    const urlRegions = parseList(paramsIn.get("region"));
-    const urlQ = (paramsIn.get("q") ?? "").trim();
-    const urlSort = paramsIn.get("sort") ?? "relevance";
-    const urlThemes = (paramsIn.get("themes") ?? "").split(",").filter(Boolean);
-    const urlDesserts = (paramsIn.get("desserts") ?? "").split(",").filter(Boolean);
-    const urlPurposes = (paramsIn.get("purpose") ?? "").split(",").filter(Boolean);
-    const urlMoods = (paramsIn.get("moods") ?? "").split(",").filter(Boolean);
-    const urlMusts = (paramsIn.get("must") ?? "").split(",").filter(Boolean);
 
     (async () => {
       try {
         setLoading(true);
 
-        const params = new URLSearchParams();
-        if (urlRegions.length) params.set("region", urlRegions.join(","));
-        if (urlQ) params.set("q", urlQ);
-        if (urlSort) params.set("sort", urlSort);
-        if (urlThemes.length) params.set("themes", urlThemes.join(","));
-        if (urlDesserts.length) params.set("desserts", urlDesserts.join(","));
-        if (urlPurposes.length) params.set("purpose", urlPurposes.join(","));
-        if (urlMoods.length) params.set("moods", urlMoods.join(","));
-        if (urlMusts.length) params.set("must", urlMusts.join(","));
-
-        const qs = params.toString();
-        const data = await apiFetch(`/api/cafes${qs ? `?${qs}` : ""}`);
+        const data = await apiFetch(`/api/cafes${serverFetchKey ? `?${serverFetchKey}` : ""}`);
 
         if (!alive) return;
 
@@ -316,7 +378,8 @@ export default function Search() {
     return () => {
       alive = false;
     };
-  }, [spKey]);
+  }, [serverFetchKey]);
+
 
   // ✅ 뒤로/앞으로(POP)로 돌아왔을 때: 클릭했던 카드 위치로 복원 (1회)
   useEffect(() => {
@@ -416,7 +479,10 @@ export default function Search() {
     };
   }, [regions, themes, desserts, purposes, moods, musts]);
 
-  const filteredResults = results;
+  const filteredResults = useMemo(
+    () => applyClientFilters(results, { themes, desserts, purposes, moods, musts }),
+    [results, themes, desserts, purposes, moods, musts]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredResults.length / PAGE_SIZE));
   const startPage = Math.floor((page - 1) / 10) * 10 + 1;
