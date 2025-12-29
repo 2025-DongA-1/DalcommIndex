@@ -284,7 +284,17 @@
 .empty-sub{ margin-top:8px; color:var(--muted); font-size:13px; }
 
 @media (max-width: 980px){
-  .sr-body{ grid-template-columns: 1fr; }
+  /* 2컬럼 유지 + 화면이 좁으면 가로 스크롤로 처리 */
+  .sr-body{
+    grid-template-columns: 320px minmax(520px, 1fr);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 결과 영역이 너무 눌려 사라지는 느낌 방지 */
+  .sr-results{
+    min-width: 520px;
+  }
 }
 
 /* 체크/라디오 한 줄 정렬 */

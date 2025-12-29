@@ -245,7 +245,7 @@ export default function Main() {
     []
   );
 
-  // ✅ 형님이 사진 넣을 자리: img 경로만 교체하면 됨
+  // ✅ 사진 넣을 자리: img 경로만 교체하면 됨
   const regionCards = useMemo(
     () => [
       { id: "dong-gu", title: "광주광역시 동구", sub: "동명동·충장로", img: "/main/dong-gu.jpg" },
@@ -267,7 +267,7 @@ export default function Main() {
       { key: "study", title: "공부/작업", sub: "조용함·좌석", img: "/main/stu.jpg" },
       { key: "date", title: "데이트", sub: "분위기·코스", img: "/main/date.jpg" },
       { key: "family", title: "가족/아이", sub: "주차·키즈", img: "/main/fam.jpg" },
-      { key: "cake", title: "주문 케이크", sub: "픽업·예약", img: "/main/cake.jpg" },
+      { key: "pet", title: "반려동물 동반", sub: "반려동물과 함께", img: "/main/pet.png" },
     ],
     []
   );
@@ -294,6 +294,44 @@ export default function Main() {
     ],
     []
   );
+
+  const goThemeTab = (key) => {
+    const params = new URLSearchParams();
+    if (region && region !== "all") params.set("region", region);
+
+    // Sidebar.jsx(UI_TO_SOURCE) 기준으로 “Search가 매칭 가능한 토큰”으로 변환
+    // - Search는 URL의 themes/desserts/purpose/must 등을 읽고(:contentReference[oaicite:4]{index=4})
+    //   buildHayForMatch에 포함된 텍스트에서 매칭합니다. :contentReference[oaicite:5]{index=5}
+    const map = {
+      // 디저트 맛집: themes 대신 desserts로 거는 게 안전
+      dessert: { desserts: ["케이크", "쿠키/구움과자", "마카롱", "초콜릿/디저트특화", "크레페/와플"] },
+
+      // 사진/포토존 (Sidebar: "📸 포토존" -> theme: ["포토존/인스타"]) :contentReference[oaicite:6]{index=6}
+      photo: { themes: ["포토존/인스타"] },
+
+      // 공부/작업 (Sidebar: "💻 카공/작업" -> purpose/must) :contentReference[oaicite:7]{index=7}
+      study: { purpose: ["공부/작업"], must: ["콘센트/와이파이"] },
+
+      // 데이트 (Sidebar: "❤️ 데이트") :contentReference[oaicite:8]{index=8}
+      date: { purpose: ["데이트"] },
+
+      // 가족/아이 (Sidebar: "👶 아이와 함께") :contentReference[oaicite:9]{index=9}
+      family: { purpose: ["가족/키즈"], must: ["키즈/유모차"] },
+
+      // 반려동물과 함께
+      pet: { purpose: ["반려견동반"], must: ["반려견동반"] },
+    };
+
+    const picked = map[key];
+    if (picked?.themes?.length) params.set("themes", picked.themes.join(","));
+    if (picked?.desserts?.length) params.set("desserts", picked.desserts.join(","));
+    if (picked?.purpose?.length) params.set("purpose", picked.purpose.join(","));
+    if (picked?.must?.length) params.set("must", picked.must.join(","));
+    if (picked?.q) params.set("q", picked.q);
+
+    navigate(`/search?${params.toString()}`);
+  };
+
 
   const [trendingMenus, setTrendingMenus] = useState(fallbackTrending);
   const [hotRoadAreas, setHotRoadAreas] = useState(fallbackHot);
@@ -794,7 +832,7 @@ export default function Main() {
                 <button
                   key={c.key}
                   className="img-card"
-                  onClick={() => navigate(`/search?region=${encodeURIComponent(region)}&themes=${encodeURIComponent(c.key)}`)}
+                  onClick={() => goThemeTab(c.key)}
                 >
                   <div className="thumb">
                     <img src={c.img} alt="" />

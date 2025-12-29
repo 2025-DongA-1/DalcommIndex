@@ -454,8 +454,9 @@ export default function Search() {
     setSort("relevance");
     setPage(1);
 
-    setLoading(true);
-    setSp(new URLSearchParams(), { replace: true });
+    if (spKey !== "") {
+      setSp(new URLSearchParams(), { replace: true });
+    }
   };
 
   // Sidebar 선택 복구용(현재 URL 상태를 initialPrefs로 제공)
