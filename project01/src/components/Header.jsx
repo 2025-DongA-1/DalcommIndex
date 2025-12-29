@@ -24,7 +24,7 @@ const Header = ({ showInfoBar = false }) => {
       <div className="logo" onClick={() => navigate("/")}>
   <img className="logo-mark" src="/logo_crop.png" alt="로고" />
   <div>
-    <span className="logo-title">달콤 인덱스</span>
+    <span className="logo-title">달콤인덱스</span>
     <div className="logo-sub">달콤한 리뷰를, 한눈에 인덱스</div>
   </div>
 </div>

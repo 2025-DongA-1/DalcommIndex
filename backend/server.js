@@ -33,6 +33,23 @@ const parseCsv = (v) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
+function kakaoMapLinkFromCoords(name, lat, lon) {
+  const la = Number(lat);
+  const lo = Number(lon);
+  if (!Number.isFinite(la) || !Number.isFinite(lo)) return "";
+
+  // 한국 좌표 대략 범위 체크(선택): 이상치면 링크 생성 안 함
+  if (la < -90 || la > 90 || lo < -180 || lo > 180) return "";
+
+  // Kakao 지도 URL 패턴: /link/map/위도,경도  또는 /link/map/이름,위도,경도
+  // 이름이 있으면 더 보기 좋게 이름 포함
+  const safeName = (name ?? "").toString().trim();
+  return safeName
+    ? `https://map.kakao.com/link/map/${encodeURIComponent(safeName)},${la},${lo}`
+    : `https://map.kakao.com/link/map/${la},${lo}`;
+}
+
+
 /** ====== 테이블/컬럼 존재 여부 캐시(리뷰/설정 기능용) ====== */
 const __tableCache = new Map();
 async function tableExists(tableName) {
@@ -373,7 +390,11 @@ function pickCafeResultFields(cafe) {
     region: cafe.region,
     name: cafe.name,
     address: cafe.address,
-    url: cafe.url,
+    url: normalizeStr(cafe.url) || kakaoMapLinkFromCoords(
+     cafe.name,
+     cafe.y ?? cafe.lat,   // y = lat
+     cafe.x ?? cafe.lon    // x = lon
+    ),
     // 추가: user_reviews 평균 별점 (없으면 null)
     rating:
       cafe.rating == null
@@ -1685,12 +1706,29 @@ app.post("/api/cafes/:id/user-reviews", authRequired, async (req, res) => {
       let recs = [];
       if (prefs.target) {
         const tName = normalizeStr(prefs.target).replace(/\s+/g, "");
-        // 이름 포함 여부로 검색 (공백 무시 비교)
-        const found = cafesForChat.find((c) => 
-          normalizeStr(c.name).replace(/\s+/g, "").includes(tName)
-        );
-        if (found) {
-          recs = [found]; // 찾았으면 결과 고정
+        const candidates = cafesForChat.filter((c) => {
+          const n = normalizeStr(c.name).replace(/\s+/g, "");
+          return n.includes(tName) || tName.includes(n);
+        });
+
+        if (candidates.length) {
+          const msg = normalizeStr(userMessage).replace(/\s+/g, "");
+          const REGION_HINTS = ["담양", "광주", "화순", "나주", "순천", "목포", "여수"];
+          const hints = REGION_HINTS.filter((w) => msg.includes(w) || tName.includes(w));
+
+          const score = (c) => {
+            const n = normalizeStr(c.name).replace(/\s+/g, "");
+            const hay = normalizeStr(`${c.address || ""} ${c.region || ""}`).replace(/\s+/g, "");
+            let s = 0;
+            if (n === tName) s += 200;
+            if (n.includes(tName)) s += 120;
+            if (tName.includes(n)) s += 80;
+            if (hints.some((w) => hay.includes(w))) s += 80;
+            return s;
+          };
+
+          candidates.sort((a, b) => score(b) - score(a));
+          recs = [candidates[0]];
         }
       }
       

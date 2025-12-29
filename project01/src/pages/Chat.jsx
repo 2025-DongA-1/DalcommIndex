@@ -147,6 +147,10 @@ const Chat = () => {
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
+  const canOpenMap = (cafe) =>
+    Number.isFinite(Number(cafe?.x ?? cafe?.lon)) &&
+    Number.isFinite(Number(cafe?.y ?? cafe?.lat));
+
   return (
     <>
       <style>
@@ -656,15 +660,27 @@ const Chat = () => {
                                                 상세보기
                                               </button>
 
-                                              {c.url ? (
-                                                <a
-                                                  className="result-link"
-                                                  href={c.url}
-                                                  target="_blank"
-                                                  rel="noreferrer"
+                                              {canOpenMap(c) ? (
+                                                <button
+                                                  type="button"
+                                                  className="result-btn"
+                                                  onClick={() => {
+                                                    navigate("/map", {
+                                                      state: {
+                                                        focusCafe: {
+                                                          id: c.cafe_id ?? c.id,
+                                                          name: c.name,
+                                                          address: c.address,
+                                                          x: Number(c.x ?? c.lon), // lon
+                                                          y: Number(c.y ?? c.lat), // lat
+                                                        },
+                                                        openPopup: true,
+                                                      },
+                                                    });
+                                                  }}
                                                 >
                                                   지도 열기
-                                                </a>
+                                                </button>
                                               ) : null}
                                             </div>
                                           </div>

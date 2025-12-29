@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import Header from "../components/Header";
 import PlacePopup from "../components/PlacePopup";
 import "../styles/Main.css";
@@ -227,8 +227,71 @@ function buildDynamicHashtagChips(
   return out.slice(0, dessertMax + keywordMax);
 }
 
+
+const MAIN_SNAPSHOT_KEY = "dalcomm_main_snapshot_v1";
+const MAIN_RESTORE_ARM_KEY = "dalcomm_main_restore_arm_v1";
+
+function readMainSnapshot() {
+  try {
+    const raw = sessionStorage.getItem(MAIN_SNAPSHOT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMainSnapshot(data) {
+  try {
+    sessionStorage.setItem(MAIN_SNAPSHOT_KEY, JSON.stringify(data));
+  } catch {
+    // ignore
+  }
+}
+
+function armMainRestore() {
+  try {
+    sessionStorage.setItem(MAIN_RESTORE_ARM_KEY, "1");
+  } catch {
+    // ignore
+  }
+}
+
+function consumeMainRestoreArm() {
+  try {
+    const v = sessionStorage.getItem(MAIN_RESTORE_ARM_KEY);
+    sessionStorage.removeItem(MAIN_RESTORE_ARM_KEY);
+    return v === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function Main() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const navType = useNavigationType();
+
+  const handledKeyRef = useRef(null);
+  const pageRef = useRef(null);
+  const lastExplicitSaveRef = useRef(0);
+
+  // ✅ 브라우저 기본 스크롤 복원과 충돌 방지(우리가 직접 복원)
+  useEffect(() => {
+    const prev = window.history?.scrollRestoration;
+    try {
+      if (window.history) window.history.scrollRestoration = "manual";
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        if (window.history && prev) window.history.scrollRestoration = prev;
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
 
   const regionOptions = useMemo(
     () => [
@@ -329,6 +392,7 @@ export default function Main() {
     if (picked?.must?.length) params.set("must", picked.must.join(","));
     if (picked?.q) params.set("q", picked.q);
 
+    saveMainSnapshot();
     navigate(`/search?${params.toString()}`);
   };
 
@@ -462,6 +526,135 @@ export default function Main() {
 
   const [region, setRegion] = useState(regionOptions[0].value);
   const [keyword, setKeyword] = useState("");
+
+  const getScrollSnapshot = useCallback(() => {
+    const el = pageRef.current;
+
+    const winY =
+      window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0;
+    const elY = el ? el.scrollTop || 0 : 0;
+
+    if (el && elY > 0) return { scrollY: elY, scrollTarget: "main" };
+    if (winY > 0) return { scrollY: winY, scrollTarget: "window" };
+
+    if (el) {
+      const oy = window.getComputedStyle(el).overflowY;
+      const elScrollable = (oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight + 2;
+      if (elScrollable) return { scrollY: 0, scrollTarget: "main" };
+    }
+    return { scrollY: 0, scrollTarget: "window" };
+  }, []);
+
+  const restoreScrollTo = useCallback((y, target = "window") => {
+    const desiredY = Number(y || 0) || 0;
+
+    let attempts = 0;
+    const maxAttempts = 80; // 약 4초(50ms * 80)까지 레이아웃/이미지 로딩 대기
+    let timerId = null;
+
+    const tick = () => {
+      attempts += 1;
+
+      const el = pageRef.current;
+      const useEl = target === "main" && el;
+
+      const maxScroll = useEl
+        ? Math.max(0, (el.scrollHeight || 0) - (el.clientHeight || 0))
+        : Math.max(0, (document.documentElement?.scrollHeight || 0) - window.innerHeight);
+
+      const clamped = Math.max(0, Math.min(desiredY, maxScroll));
+
+      if (useEl) el.scrollTop = clamped;
+      else window.scrollTo(0, clamped);
+
+      const current = useEl
+        ? (el.scrollTop || 0)
+        : (window.scrollY || document.documentElement?.scrollTop || document.body?.scrollTop || 0);
+
+      const done = Math.abs(current - clamped) <= 2 || attempts >= maxAttempts;
+      if (done) return;
+
+      timerId = window.setTimeout(tick, 50);
+    };
+
+    tick();
+
+    return () => {
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, []);
+
+  // ✅ Main 이탈 전 상태 저장(지역/검색어/seed/스크롤/팝업)
+  const saveMainSnapshot = useCallback(
+    (extra = {}) => {
+      lastExplicitSaveRef.current = Date.now();
+      const { scrollY, scrollTarget } = getScrollSnapshot();
+
+      writeMainSnapshot({
+        locationKey: location.key,
+        region,
+        keyword,
+        themeSeed,
+        hashtagSeed,
+        openCafeId: openCafeId ?? null,
+        scrollY,
+        scrollTarget,
+        ...extra,
+      });
+
+      armMainRestore();
+    },
+    [getScrollSnapshot, location.key, region, keyword, themeSeed, hashtagSeed, openCafeId]
+  );
+
+  // ✅ Main 진입 시: 뒤로가기(POP)면 복원, 로고로 온 경우는 상단 시작
+  useEffect(() => {
+    // 같은 location 엔트리에 대해 중복 처리 방지(StrictMode/replace 대응)
+    if (handledKeyRef.current === location.key) return;
+    handledKeyRef.current = location.key;
+
+    const saved = readMainSnapshot();
+    const forceTop = Boolean(location.state?.scrollTop); // 로고 클릭으로 왔을 때만 true
+
+    const armed = consumeMainRestoreArm();
+    const keyMatch = Boolean(saved?.locationKey && saved.locationKey === location.key);
+    const shouldRestore = navType === "POP" && armed && keyMatch && saved && !forceTop;
+
+    if (shouldRestore) {
+      if (saved.region) setRegion(saved.region);
+      setKeyword(typeof saved.keyword === "string" ? saved.keyword : "");
+      if (Number.isFinite(saved.themeSeed)) setThemeSeed(saved.themeSeed);
+      if (Number.isFinite(saved.hashtagSeed)) setHashtagSeed(saved.hashtagSeed);
+
+      if (saved.openCafeId != null && saved.openCafeId !== "") {
+        setOpenCafeId(saved.openCafeId);
+      }
+    } else if (forceTop) {
+      // 로고 클릭 등: 상단 시작 + 팝업 닫기
+      setOpenCafeId(null);
+    }
+
+    if (shouldRestore || forceTop) {
+      const y = shouldRestore ? Number(saved?.scrollY || 0) : 0;
+      const target = shouldRestore ? (saved?.scrollTarget || "window") : "window";
+      restoreScrollTo(y, target);
+    }
+
+    // 로고 진입 플래그는 1회성으로 제거(이후 POP에 영향 없게)
+    if (forceTop) {
+      navigate(".", { replace: true, state: {} });
+    }
+  }, [location.key, location.state, navType, navigate, restoreScrollTo]);
+
+  useEffect(() => {
+    return () => {
+      // ✅ 직전에 onBeforeNavigate/saveMainSnapshot이 호출됐다면(상세/로그인 이동 등) 여기서 덮어쓰지 않음
+      const dt = Date.now() - (lastExplicitSaveRef.current || 0);
+      if (dt < 1500) return;
+      saveMainSnapshot();
+    };
+  }, [saveMainSnapshot]);
+
 
   const fallbackHashtags = useMemo(() => ["감성", "조용함", "포토존", "주문케이크", "비건", "가족"], []);
   const hashtagChips = useMemo(() => {
@@ -597,7 +790,10 @@ export default function Main() {
         title: menuPick ? `오늘 ${menuPick}는 어때요?` : "오늘 뭐 먹지?",
         sub: "리뷰 텍스트에서 많이 언급된 메뉴 기반",
         cta: "맛집 찾아보기 →",
-        onViewAll: () => navigate(toSearchUrl({ q: menuPick || undefined, desserts: menuPick || undefined })),
+        onViewAll: () => {
+          saveMainSnapshot();
+          navigate(toSearchUrl({ q: menuPick || undefined, desserts: menuPick || undefined }));
+        },
         items: finalMenuItems,
       },
       {
@@ -606,13 +802,15 @@ export default function Main() {
         title: shortHotTitle ? `달콤인덱스와 ${shortHotTitle} 카페 탐방` : "오늘은 어디로 갈까?",
         sub: "최근 언급/다양성이 높은 거리 기반",
         cta: "거리 카페 보기 →",
-        onViewAll: () =>
+        onViewAll: () => {
+          saveMainSnapshot();
           navigate(
             toSearchUrl({
               regionValue: hotRegion !== "all" ? hotRegion : undefined,
               q: roadToken || hotPick || undefined,
             })
-          ),
+          );
+        },
         items: finalHotItems,
       },
       {
@@ -621,11 +819,15 @@ export default function Main() {
         title: themePick ? `${themePick.title} 카페 모아보기` : "테마 카페",
         sub: themePick?.sub || "리뷰 키워드 기반 자동 분류",
         cta: "테마 전체보기 →",
-        onViewAll: () => themePick && navigate(toSearchUrl({ themes: themePick.key })),
+        onViewAll: () => {
+          if (!themePick) return;
+          saveMainSnapshot();
+          navigate(toSearchUrl({ themes: themePick.key }));
+        },
         items: finalThemeItems,
       },
     ];
-  }, [cafesSnapshot, trendingMenus, hotRoadAreas, themeCards, themeSeed, navigate, toSearchUrl]);
+  }, [cafesSnapshot, trendingMenus, hotRoadAreas, themeCards, themeSeed, navigate, toSearchUrl, saveMainSnapshot]);
 
 
   const goSearch = (e) => {
@@ -636,11 +838,12 @@ export default function Main() {
     if (region !== "all") params.set("region", region);
     if (q) params.set("q", q);
 
+    saveMainSnapshot();
     navigate(`/search?${params.toString()}`);
   };
 
   return (
-    <div className="main-page">
+    <div className="main-page" ref={pageRef}>
       <Header showInfoBar={true} />
 
       {/* ✅ 검색창 영역: 가로로 긴 배경이미지 + 검색박스 오버레이 */}
@@ -681,8 +884,10 @@ export default function Main() {
                   className="chip"
                   onClick={() => {
                     if (ch.kind === "dessert") {
+                      saveMainSnapshot();
                       navigate(toSearchUrl({ desserts: ch.label, sort: "relevance" }));
                     } else {
+                      saveMainSnapshot();
                       navigate(toSearchUrl({ q: ch.label, sort: "relevance" }));
                     }
                   }}
@@ -796,7 +1001,10 @@ export default function Main() {
           <div className="reco-box">
             <div className="section-head">
               <h2>지역별 추천</h2>
-              <button className="linkish" onClick={() => navigate("/search")}>
+              <button className="linkish" onClick={() => {
+                  saveMainSnapshot();
+                  navigate("/search");
+                }}>
                 지역 전체 보기 →
               </button>
             </div>
@@ -806,7 +1014,10 @@ export default function Main() {
                 <button
                   key={c.id}
                   className="img-card"
-                  onClick={() => navigate(`/search?region=${encodeURIComponent(c.id)}`)}
+                  onClick={() => {
+                      saveMainSnapshot();
+                      navigate(`/search?region=${encodeURIComponent(c.id)}`);
+                    }}
                 >
                   <div className="thumb">
                     <img src={c.img} alt="" />
@@ -860,7 +1071,10 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 트렌딩 메뉴</h3>
-                <button className="linkish" onClick={() => navigate("/rankingPage")}>
+                <button className="linkish" onClick={() => {
+                  saveMainSnapshot();
+                  navigate("/rankingPage");
+                }}>
                   인사이트 보기 →
                 </button>
               </div>
@@ -878,7 +1092,10 @@ export default function Main() {
             <div className="panel">
               <div className="panel-head">
                 <h3>최근 핫한 거리</h3>
-                <button className="linkish" onClick={() => navigate("/rankingPage")}>
+                <button className="linkish" onClick={() => {
+                  saveMainSnapshot();
+                  navigate("/rankingPage");
+                }}>
                   인사이트 보기 →
                 </button>
               </div>
@@ -898,7 +1115,12 @@ export default function Main() {
 
       
       {/* ✅ 메인 추천 카페 클릭 시: 지도 팝업(PlacePopup) 그대로 띄우기 */}
-      <PlacePopup open={!!openCafeId} place={popupPlace} onClose={() => setOpenCafeId(null)} />
+      <PlacePopup
+        open={!!openCafeId}
+        place={popupPlace}
+        onClose={() => setOpenCafeId(null)}
+        onBeforeNavigate={(extra) => saveMainSnapshot(extra)}
+      />
 
     </div>
   );

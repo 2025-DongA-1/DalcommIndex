@@ -393,7 +393,7 @@ function derivePopupCategories(place) {
   return { atmos, purpose, taste, menu, keywords, parking };
 }
 
-export default function PlacePopup({ open, place, onClose }) {
+export default function PlacePopup({ open, place, onClose, onBeforeNavigate }) {
   const navigate = useNavigate();
 
   const [tab, setTab] = useState("home"); // home | review | photo | info
@@ -594,6 +594,9 @@ export default function PlacePopup({ open, place, onClose }) {
 
     const token = localStorage.getItem("accessToken");
     if (!token) {
+      try {
+        onBeforeNavigate?.({ openCafeId: Number(cafeIdRaw) || cafeIdRaw });
+      } catch {}
       navigate("/login");
       return;
     }
@@ -630,7 +633,10 @@ export default function PlacePopup({ open, place, onClose }) {
       if (e?.status === 401 || e?.status === 403) {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("user");
-        navigate("/login");
+        try {
+        onBeforeNavigate?.({ openCafeId: Number(cafeIdRaw) || cafeIdRaw });
+      } catch {}
+      navigate("/login");
         return;
       }
       alert(e?.message || "즐겨찾기 처리 중 오류가 발생했습니다.");
@@ -694,7 +700,10 @@ export default function PlacePopup({ open, place, onClose }) {
         if (e?.status === 401 || e?.status === 403) {
           localStorage.removeItem("accessToken");
           localStorage.removeItem("user");
-          navigate("/login");
+          try {
+        onBeforeNavigate?.({ openCafeId: Number(cafeIdRaw) || cafeIdRaw });
+      } catch {}
+      navigate("/login");
           return;
         }
 
@@ -774,6 +783,10 @@ export default function PlacePopup({ open, place, onClose }) {
 
   // ✅ tab 연동 이동 (tab=review 로 상세페이지 리뷰 섹션/탭 오픈)
   const goDetail = (targetTab = "home") => {
+    try {
+      onBeforeNavigate?.({ openCafeId: Number(cafeId) || cafeId });
+    } catch {}
+
     sessionStorage.setItem("dalcomm_keep_map_state_v1", "1");
 
     const params = new URLSearchParams();
