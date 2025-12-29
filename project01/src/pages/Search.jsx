@@ -559,6 +559,7 @@ export default function Search() {
           <Sidebar
             isOpen={true}
             toggleSidebar={() => {}}
+            showClose={false}
             initialPrefs={sidebarInitialPrefs}
             onReset={resetFilters}
             onSearch={handleSidebarSearch}

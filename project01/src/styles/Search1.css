@@ -363,6 +363,28 @@
   background:#fff;
 } */
 
+/* 사이드바 전체를 세로 flex로 만들고 */
+.sr-page .sr-filters .sidebar-layout{
+  display: block;
+  height: auto;       /* 고정 높이 제거 */
+  min-height: 0;
+}
+
+.sr-page .sr-filters .sidebar-content-wrap{
+  overflow: visible;  /* 내부 스크롤 제거 */
+  padding-bottom: 0;
+}
+
+.sr-page .sr-filters .sidebar-footer{
+  position: static;   /* sticky/고정 제거 */
+  display: block;
+  margin-top: 12px;
+  padding: 12px 16px 16px;
+  background: #fff;
+}
+
+
+
 /* 검색결과 상단 요약칩 */
 .sr-summary .active-filter-chip{
   display:flex;
@@ -379,51 +401,78 @@
 .sr-summary .chip-value{ font-weight:700; }
 .sr-summary .chip-x{ opacity:.7; }
 
+/* ✅ Search 사이드바가 아래에서 잘려서(overflow/height) 버튼이 안 보이는 문제 강제 해결 */
+/* .sr-page .sr-filters .sidebar-layout{
+  display: flex !important;
+  flex-direction: column !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+} */
+
+.sr-page .sr-filters .sidebar-content-wrap{
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;   /* ✅ 내용 잘림 방지 */
+}
+
+.sr-page .sr-filters .sidebar-footer{
+  position: static !important;    /* ✅ 고정/스티키로 인해 화면 밖으로 밀리는 것 방지 */
+  display: block !important;
+  visibility: visible !important;
+}
+
 /* ================================
-   Search 페이지: Sidebar 컴포넌트(필터) 고정 + 스크롤/버튼 가림 해결
-   - 좌측 필터 컬럼은 헤더 아래에 sticky
-   - 내용 영역만 스크롤
-   - 하단(검색 버튼)은 항상 보이게 sticky bottom
-   - 필터 오른쪽의 흰 여백(가터) 제거
+   Search 페이지 전용: 필터(사이드바) 고정/버튼 가림/헤더 겹침 해결
    ================================ */
 
+/* 헤더 높이(기본 topbar 80px). info-bar 쓰면 112px로 조정 */
 :root{
-  /* Header 높이(기본 topbar 80px). info-bar 쓰면 112px로 조정 */
   --sr-header-offset: 80px;
 }
 
 /* Search 본문 그리드에서 좌측 필터는 위에 붙어서 따라오게 */
-.sr-body{ align-items: start; }
+.sr-body{
+  align-items: start;
+}
 
-/* 좌측 필터 래퍼: sticky + 고정 높이 */
+/* ✅ 좌측 필터 래퍼를 sticky로 만들고, 헤더 아래에서 시작 */
 .sr-filters{
   position: sticky;
   top: var(--sr-header-offset);
   height: calc(100vh - var(--sr-header-offset));
-  z-index: 5;            /* 헤더(z-index:20)보다 낮게 */
-  padding: 0;            /* ✅ 오른쪽/내부 흰 여백 제거 */
-  background: transparent; /* ✅ 빈공간이 하얗게 보이는 문제 방지 */
+  z-index: 5; /* 헤더(z-index:20)보다 낮게 */
 }
 
-/* Sidebar 컴포넌트가 inline으로 height:100vh를 주고 있으므로 강제로 덮어씀 */
-.sr-filters > .sidebar{
-  width: 100%;
+/* ✅ Sidebar 컴포넌트가 inline으로 height:100vh를 주고 있으므로 강제로 덮어씀 */
+.sr-filters .sidebar{
   height: 100% !important;
   max-height: 100% !important;
-  z-index: 5;
+  z-index: 5; /* 헤더 아래 */
+}
+
+/* =====================================================
+   Search 페이지: Sidebar footer(검색버튼) 항상 보이게 복구
+   - 내용만 스크롤
+   - footer는 sticky bottom
+   ===================================================== */
+
+/* sr-filters는 이미 sticky+고정높이. 내부는 100%로 채움 */
+.sr-page .sr-filters .sidebar,
+.sr-page .sr-filters .sidebar-layout{
+  height: 100% !important;
+  max-height: 100% !important;
 }
 
 /* Sidebar는 "내용(스크롤)" + "footer(고정)" 구조여야 함 */
-.sr-filters .sidebar-layout{
-  height: 100% !important;
-  max-height: 100% !important;
+.sr-page .sr-filters .sidebar-layout{
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
 }
 
 /* content-wrap 안에서 scroll-area만 스크롤 되게 */
-.sr-filters .sidebar-content-wrap{
+.sr-page .sr-filters .sidebar-content-wrap{
   flex: 1 !important;
   min-height: 0 !important;
   display: flex !important;
@@ -432,24 +481,22 @@
 }
 
 /* 실제 스크롤은 여기에서만 */
-.sr-filters .sidebar-scroll-area{
+.sr-page .sr-filters .sidebar-scroll-area{
   flex: 1 !important;
   min-height: 0 !important;
   overflow-y: auto !important;
-  overscroll-behavior: contain;
 }
 
 /* 검색 버튼 영역(footer)은 항상 아래에 고정 */
-.sr-filters .sidebar-footer{
+.sr-page .sr-filters .sidebar-footer{
   position: sticky !important;
   bottom: 0 !important;
-  z-index: 10 !important;
-  background: var(--card) !important;
-  border-top: 1px solid var(--line);
+  z-index: 60 !important;
+  background: rgba(255,255,255,0.96) !important;
 }
 
 /* 버튼은 footer 안에서 100% */
-.sr-filters .sidebar-search-btn{
+.sr-page .sr-filters .sidebar-search-btn{
   width: 100% !important;
   position: static !important;
 }

@@ -102,7 +102,7 @@ const REGION_EMOJI_MAP = {
 
 const getRegionEmoji = (canonicalLabel) => REGION_EMOJI_MAP[canonicalLabel] || "📍";
 
-const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => {
+const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs, showClose = true }) => {
   // ✅ 요청하신 카테고리 구성
   const filters = useMemo(
     () => ({
@@ -457,9 +457,11 @@ const Sidebar = ({ isOpen, toggleSidebar, onSearch, onReset, initialPrefs }) => 
               <button type="button" className="filter-reset-btn" onClick={resetAll}>
                 초기화
               </button>
+            {showClose && (
               <button type="button" className="close-filter-btn" onClick={toggleSidebar}>
                 ✕ 닫기
               </button>
+            )}
             </div>
           </div>
 
