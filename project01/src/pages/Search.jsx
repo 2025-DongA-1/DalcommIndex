@@ -173,6 +173,8 @@ const buildHayForMatch = (x) => {
     pickArr(x?.theme).join(" "),
     pickArr(x?.mood).join(" "),
     pickArr(x?.dessert).join(" "),
+    pickArr(x?.themes).join(" "),
+    pickArr(x?.desserts).join(" "),
   ];
   return normalizeForMatch(chunks.filter(Boolean).join(" "));
 };
