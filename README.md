@@ -1,8 +1,8 @@
 # 달콤인덱스  
 *(팀명: 서울 자가에 살고싶은 동아 MX 다니는 영환팀 이야기)*
 <img width="910" height="434" alt="메인페이지" src="https://github.com/user-attachments/assets/3800b0e3-5932-41d4-9b04-957687421b3d" />
-
 <br>
+
 ---
 
 ## 서비스 소개
