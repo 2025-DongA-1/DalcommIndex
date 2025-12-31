@@ -81,7 +81,8 @@
 ---
 
 ## 시스템 아키텍처
-📌 *(시스템 아키텍처 이미지 삽입 위치)*
+<img width="1920" height="1080" alt="시스템아키텍처" src="https://github.com/user-attachments/assets/3592c084-f2be-49b3-9d71-52583e351e50" />
+
 <br>
 
 ---
