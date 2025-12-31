@@ -125,14 +125,14 @@
   <tr>
     <td align="center"><strong>김영환</strong></td>
     <td align="center"><strong>홍지영</strong></td>
-    <td align="center"><strong>윤동현></strong></td>
-    <td align="center"><strong>김광진></strong></td>
+    <td align="center"><strong>윤동현</strong></td>
+    <td align="center"><strong>김광진</strong></td>
   </tr>
   <tr>
+    <td align="center"><b>Frontend/DB</b></td>
     <td align="center"><b>Frontend</b></td>
+    <td align="center"><b>Backend/데이터 수집 및 전처리</b></td>
     <td align="center"><b>Frontend</b></td>
-    <td align="center"><b>Backend</b></td>
-    <td align="center"><b>Backend</b></td>
   </tr>
   <tr>
     <td align="center"><a href="https://github.com/자신의username작성해주세요" target='_blank'>github</a></td>
