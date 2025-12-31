@@ -82,13 +82,12 @@
 
 ## 시스템 아키텍처
 <img width="1920" height="1080" alt="시스템아키텍처" src="https://github.com/user-attachments/assets/3592c084-f2be-49b3-9d71-52583e351e50" />
-
 <br>
 
 ---
 
 ## 유스케이스
-📌 *(유스케이스키텍처 이미지 삽입 위치)*
+<img width="552" height="922" alt="유스케이스 다이어그램" src="https://github.com/user-attachments/assets/f72f9502-b3d1-4869-b2e8-6f5653931e45" />
 <br>
 
 ---
