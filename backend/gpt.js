@@ -31,13 +31,16 @@ function heuristicPreferences(userMessage) {
   if (/장성/.test(text)) prefs.region.push("jangseong");
   if (/화순/.test(text)) prefs.region.push("hwasun");
 
-  if (/(조용|차분|한적|심플|미니멀)/.test(text)) prefs.atmosphere.push("조용한");
+  if (/(조용|차분|한적|심플|미니멀)/.test(text)) prefs.atmosphere.push("조용");
   if (/(감성|감각|아늑|풍미|전통|차분|유럽|무드|모던|잔잔|한옥|미니멀|기와)/.test(text)) prefs.atmosphere.push("감성");
-  if (/(편안|포근|상큼|따뜻하다|묵직|한적|안락)/.test(text)) prefs.atmosphere.push("편안한");
+  if (/(편안|포근|상큼|따뜻하다|묵직|한적|안락)/.test(text)) prefs.atmosphere.push("편안");
   if (/(뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("뷰");
-  if (/(포토존|뷰|전망|통창|테라스)/.test(text)) prefs.atmosphere.push("사진");
+  if (/(사진|포토|포토존|인생샷|촬영|스냅|카메라|뷰|전망|통창|테라스)/.test(text)) {
+    prefs.atmosphere.push("사진");
+  }
 
   if (/(아메리카노|말차|카라멜|라떼|카페라떼|에이드|바닐라빈|밀크티|에스프레소|파르페|콜드브루|딸기라떼)/.test(text)) prefs.taste.push("커피");
+  if (/(커피|커피맛|원두|핸드드립|드립|스페셜티)/.test(text)) prefs.taste.push("커피");
   if (/(디저트|케이크|버터|마들렌|쿠키|샌드위치|아이스크림|소금|샐러드|빙수|팥빙수|바닐라|휘낭시에|식빵|파이|타르트|푸딩|토스트|티라미수|베이글|브라우니|잠봉뵈르|크루아상|스콘|와플|젤라또|치즈|팬케이크|에그타르트|크로플|롤케이크)/.test(text)) prefs.taste.push("디저트");
   if (/(브런치|피자|파스타|스테이크|파니니|포케)/.test(text)) prefs.taste.push("브런치");
 
@@ -53,8 +56,8 @@ function heuristicPreferences(userMessage) {
 
   if (/주차/.test(text)) prefs.required.push("주차 가능");
   if (/(조용한 곳만|진짜 조용|완전 조용)/.test(text)) {
-    prefs.required.push("조용한");
-    prefs.atmosphere.push("조용한");
+    prefs.required.push("조용");
+    prefs.atmosphere.push("조용");
   }
 
   if (/(맛집|진짜 맛있|후기 좋은|평가 좋은|실패 없는)/.test(text)) prefs.minSentiment = 70;
@@ -191,7 +194,7 @@ function formatKeywordHits(hits) {
   if (!Array.isArray(hits) || hits.length === 0) return "";
   return hits
     .filter(h => h && typeof h === 'object') 
-    .map((h) => `${h.label}(${h.count})`)
+    .map((h) => `${h.label ?? h.text}(${h.count ?? h.value})`)
     .join(", ");
 }
 
@@ -207,6 +210,56 @@ function formatMatchSummary(cafe) {
   return parts.join(" / ");
 }
 
+function buildPurposeBlockSet(userMessage, prefs) {
+  const p = new Set(Array.isArray(prefs?.purpose) ? prefs.purpose : []);
+  const txt = (userMessage || "").toString();
+
+  if (/(데이트|연인|커플)/.test(txt)) p.add("데이트");
+  if (/(공부|스터디)/.test(txt)) p.add("공부");
+  if (/(작업|노트북)/.test(txt)) p.add("작업");
+
+  // ✅ 여기서 먼저 block을 만든 다음 add 해야 함
+  const block = new Set();
+
+  // 데이트면 공부/작업 계열 키워드(추천 이유에) 섞이지 않게 차단
+  if (p.has("데이트")) ["공부", "작업", "스터디", "노트북"].forEach((t) => block.add(t));
+
+  // 공부/작업이면 데이트 계열 차단
+  if (p.has("공부") || p.has("작업")) ["데이트", "연인", "커플", "로맨틱", "기념일"].forEach((t) => block.add(t));
+
+  // ✅ 가족을 원하지 않으면 가족/아이 계열은 추천 이유에서 제외
+  const wantsFamily = p.has("가족") || /(가족|아이|아기|키즈|유모차|부모)/.test(txt);
+  if (!wantsFamily) ["가족", "아이", "아기", "키즈", "유모차", "부모"].forEach((t) => block.add(t));
+
+  return block;
+}
+
+function buildReasonCandidates(prefs) {
+  const set = new Set();
+  const add = (...xs) => xs.filter(Boolean).forEach(x => set.add(String(x)));
+
+  const purpose = new Set(Array.isArray(prefs?.purpose) ? prefs.purpose : []);
+  const atmos = Array.isArray(prefs?.atmosphere) ? prefs.atmosphere : [];
+  const taste = Array.isArray(prefs?.taste) ? prefs.taste : [];
+  const menu = Array.isArray(prefs?.menu) ? prefs.menu : [];
+
+  // 사용자가 직접 말한 태그는 우선 후보에 포함
+  atmos.forEach(x => add(x));
+  menu.forEach(x => add(x));
+
+  if (purpose.has("데이트")) add("데이트","연인","커플","로맨틱","기념일","감성","무드","사진","포토존","뷰","전망","통창","테라스","야경");
+  if (purpose.has("공부") || purpose.has("작업")) add("공부","스터디","작업","노트북","콘센트","조용","집중");
+  if (purpose.has("가족")) add("가족","아이","키즈","유모차");
+  if (purpose.has("모임")) add("모임","수다","단체","친구");
+
+  if (taste.includes("디저트")) add("디저트","케이크","쿠키","휘낭시에","스콘","빵","베이글","타르트","푸딩","빙수","브라우니","마들렌","크로플","와플","젤라또","아이스크림","티라미수");
+  if (taste.includes("커피")) add(
+    "커피","아메리카노","라떼","카페라떼","에스프레소","콜드브루",
+    "원두","핸드드립","드립","산미","고소","디카페인"
+  );
+  return set;
+}
+
 /**
  * 2) 추천 결과를 자연어 설명으로 생성
  */
@@ -217,11 +270,29 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
 
   // OpenAI 비활성 시 fallback
   if (!OPENAI_API_KEY || !OPENAI_ENABLED || !OPENAI_REPLY) {
+    const blockSet = buildPurposeBlockSet(userMessage, prefs);
+
     const lines = results.map((c, i) => {
-      const reason = formatMatchSummary(c);
-      return `${i + 1}. ${c.name}${c.address ? ` (${c.address})` : ""}${reason ? `\n   - ${reason}` : ""}`;
+      const hits = Array.isArray(c.keyword_hits) ? c.keyword_hits : [];
+      const why = hits
+        .map((h) => ({ k: h.text ?? h.label, v: Number(h.value ?? h.count ?? 0) }))
+        .filter((x) => x.k && x.v > 0 && !blockSet.has(x.k))
+        .sort((a, b) => b.v - a.v)
+        .slice(0, 3)
+        .map((x) => `'${x.k}'(${x.v}회)`)
+        .join(", ");
+
+      // 특징은 match 태그/키워드로 1줄 요약(없으면 기본 문장)
+      const atmos = Array.isArray(c.match?.atmosphere) ? c.match.atmosphere : [];
+      const taste = Array.isArray(c.match?.taste) ? c.match.taste : [];
+      const purpose = Array.isArray(c.match?.purpose) ? c.match.purpose : [];
+      const featureParts = [...purpose, ...atmos, ...taste].filter(Boolean).slice(0, 3);
+      const feature = featureParts.length ? `${featureParts.join(", ")} 중심으로 만족도가 높은 곳이에요.` : "요청 조건과 잘 맞는 곳이에요.";
+
+      return `${i + 1}. **${c.name}**${c.address ? `\n   - 위치: ${c.address}` : ""}\n   - 특징: ${feature}\n   - 추천 이유: ${why || "요청 키워드 언급 빈도가 높아요."}`;
     });
-    return `검색 결과입니다.\n\n${lines.join("\n")}`;
+
+    return `조건에 맞는 카페 3곳을 추천해드릴게요.\n\n${lines.join("\n\n")}`;
   }
 
   const STOP_WORDS = [
@@ -229,7 +300,11 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
     "추천", "방문", "핫플", "공간", "곳", "분위기", "가게", "식당", "운영", "메뉴", "준비"
   ];
 
+  const blockSet = buildPurposeBlockSet(userMessage, prefs);
+  const reasonCandidates = buildReasonCandidates(prefs);
+
   let simpleResults = [];
+  const isStop = (label) => STOP_WORDS.includes(label) && !reasonCandidates.has(label);
   try {
     simpleResults = results.map((cafe) => {
     // 1) 실제 빈도수 데이터(keyword_counts_json) 파싱/정규화
@@ -265,7 +340,14 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
     }
 
     // 최종 필터
-    hits = hits.filter((h) => h.label && Number.isFinite(h.count) && h.count > 0);
+    hits = hits.filter(
+      (h) =>
+        h.label &&
+        Number.isFinite(h.count) &&
+        h.count > 0 &&
+        !isStop(h.label) &&
+        !blockSet.has(h.label) 
+    );
 
       // 2. 만약 실제 빈도수가 없으면, 단순 키워드 목록(keyword_hits or keywords)을 사용하여 가상의 빈도수 생성 (Fallback)
       //    (예: 첫 번째 키워드=10회, 두 번째=9회 ... 순서가 중요도이므로)
@@ -294,10 +376,9 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
       });
 
       const uniqueMap = new Map();
-      normalized.forEach(item => {
-        if (item.label && !STOP_WORDS.includes(item.label)) {
+      normalized.forEach((item) => {
+        if (item.label && !isStop(item.label) && !blockSet.has(item.label)) { 
           const existing = uniqueMap.get(item.label);
-          // 기존 것보다 count가 높으면 갱신
           if (!existing || item.count > existing.count) {
             uniqueMap.set(item.label, item);
           }
@@ -315,16 +396,113 @@ export async function generateRecommendationMessage(userMessage, prefs, results)
       // 키워드가 없으면 기본 태그로 대체
       if (sortedKeywords.length === 0) {
          const features = [...(Array.isArray(cafe.atmosphere) ? cafe.atmosphere : []), ...(Array.isArray(cafe.taste) ? cafe.taste : [])];
-         const safeFeatures = features.filter(f => !STOP_WORDS.includes(f)).slice(0, 3);
+         const safeFeatures = features.filter(f => !STOP_WORDS.includes(f) && !blockSet.has(f)).slice(0, 3);
          if (safeFeatures.length > 0) sortedKeywords.push(...safeFeatures.map(f => `'${f}'`));
          else sortedKeywords.push("'인기 있는'");
       }
 
       const ensureArray = (arr) => Array.isArray(arr) ? arr : [];
 
+      // 상위 키워드(객체)를 더 확보해두고, 목적/후보 기반으로 추림
+      const topK = Array.from(uniqueMap.values())
+        .filter(it => it?.label && !isStop(it.label) && !blockSet.has(it.label))
+        .sort((a,b) => b.count - a.count)
+        .slice(0, 10);
+
+      const candArr = Array.from(reasonCandidates);
+      const isRelevant = (label) =>
+        candArr.length === 0
+          ? true
+          : candArr.some(c => label === c || label.includes(c) || c.includes(label));
+
+      let reasonsFromRaw = topK.filter(it => isRelevant(it.label)).slice(0, 3);
+      if (reasonsFromRaw.length < 2) reasonsFromRaw = topK.slice(0, 3); // 너무 비면 완화
+
+
+       // 1) 요청조건 기반 근거 (recommend.js에서 계산된 keyword_hits)
+      const hitsFromReco = ensureArray(cafe.keyword_hits)
+        .map((h) => {
+          const label = (h.label ?? h.text ?? "").toString().trim();
+          const recoCount = Number(h.count ?? h.value ?? 0);
+
+          // ✅ 원본 keyword_counts_json 기반 count가 있으면 그걸 우선 사용
+          const rawCount = uniqueMap.get(label)?.count;
+          const count = Number.isFinite(rawCount) ? rawCount : recoCount;
+
+          return { label, count };
+        })
+        .filter((h) =>
+          h.label &&
+          Number.isFinite(h.count) &&
+          h.count > 0 &&
+          !isStop(h.label) &&          // ✅ STOP_WORDS.includes 대신 isStop 권장
+          !blockSet.has(h.label)
+        )
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3);
+
+      // 2) 근거 키워드가 비어있으면, 매칭된 태그(분위기/목적)를 보조 근거로 사용 (빈도수 없이)
+      const matchedAtmos = ensureArray(cafe.match?.atmosphere);
+      const matchedPurpose = ensureArray(cafe.match?.purpose);
+      const fallbackTags = [...new Set([...matchedAtmos, ...matchedPurpose])].slice(0, 3);
+
+      // ✅ count=0이면 (0회) 찍지 않도록
+      const fmtWhy = (arr) =>
+        arr.map(x => (x.count > 0 ? `'${x.label}'(${x.count}회)` : `'${x.label}'`)).join(", ");
+
+      // ✅ 사용자가 “사진”을 원했는지 판별(후보셋 + 원문 둘 다로 안전장치)
+      const wantsPhoto =
+        /(사진|포토|포토존|인생샷|촬영|스냅|카메라)/.test(userMessage) ||
+        (Array.isArray(prefs?.atmosphere) && prefs.atmosphere.includes("사진"));
+
+      const isPhotoLabel = (label) => /(사진|포토존|뷰|전망|통창|테라스|야경)/.test(label);
+
+      // ✅ why 배열에 사진 키워드 최소 1개 포함시키기
+      const ensurePhotoInWhy = (arr, topK, reasonsFromRaw, hitsFromReco) => {
+        if (!wantsPhoto) return arr;
+        if (arr.some(x => isPhotoLabel(x.label))) return arr;
+
+        const found =
+          hitsFromReco.find(x => isPhotoLabel(x.label)) ||
+          reasonsFromRaw.find(x => isPhotoLabel(x.label)) ||
+          topK.find(x => isPhotoLabel(x.label));
+
+        if (found) {
+          const dedup = [found, ...arr.filter(x => x.label !== found.label)];
+          return dedup.slice(0, 3);
+        }
+
+        // 데이터에 사진 관련 언급 자체가 없으면, 최소 키워드만이라도 노출(빈도수 없음)
+        return arr.slice(0, 3);
+      };
+
+      // ✅ “조건 기반 근거(keyword_hits)”를 우선으로 why 구성
+      let whyArr = reasonsFromRaw.length ? reasonsFromRaw : hitsFromReco;
+
+      // 부족하면 서로 보강
+      if (whyArr.length < 3) {
+        const used = new Set(whyArr.map(x => x.label));
+        const pool = hitsFromReco.length ? reasonsFromRaw : hitsFromReco;
+        const extra = pool.filter(x => !used.has(x.label)).slice(0, 3 - whyArr.length);
+        whyArr = [...whyArr, ...extra];
+      }
+
+      // ✅ 사진 요청이면 사진 키워드 최소 1개 강제
+      whyArr = ensurePhotoInWhy(whyArr, topK, reasonsFromRaw, hitsFromReco);
+
+      let why = "";
+      if (whyArr.length) {
+        why = fmtWhy(whyArr);
+      } else if (fallbackTags.length) {
+        why = fallbackTags.map(t => `'${t}'`).join(", ");
+      } else {
+        const top = ensureArray(cafe.top_keywords).slice(0, 3);
+        why = top.length ? top.map(t => `'${t}'`).join(", ") : "'인기 있는'";
+      }
+
       return {
         name: cafe.name,
-        why: sortedKeywords.join(", "), 
+        why,
         atmosphere: ensureArray(cafe.atmosphere).join(", "),
         menu: ensureArray(cafe.menu).slice(0, 5).join(", ")
       };
@@ -368,9 +546,9 @@ ${JSON.stringify(simpleResults, null, 2)}
 
 3. **Recommendation 모드 (일반 추천)**:
    - 기존처럼 3개의 카페를 번호를 매겨 추천해.
-   - **Bullet point** 형식:
-     - 특징: ...
-     - 추천 이유: ... (1순위 키워드 외에 2~3순위 키워드도 섞어서 작성하며, **빈도수(예: '(15회)')를 반드시 포함해**.)
+   - **Bullet point** 형식(각 카페마다 아래 2줄 반드시 포함)
+    - 특징: atmosphere와 menu에서 2개 이상 골라 1문장으로 설명(빈도수/why 키워드 복붙 금지)
+    - 추천 이유: why 문자열을 그대로 출력(추가/변형 금지)
    - 질문은 절대 하지 마.
 
 4. **공통 사항**:

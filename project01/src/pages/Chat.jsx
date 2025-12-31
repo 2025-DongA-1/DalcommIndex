@@ -728,7 +728,7 @@ const Chat = () => {
                     className="quick-chip"
                     onClick={() => onChipClick("데이트하기 좋은 디저트카페 추천해줘")}
                   >
-                    👫 데이트 & 수다
+                    👫 데이트 하기 좋은 카페
                   </button>
                 </div>
 
@@ -782,8 +782,8 @@ const Chat = () => {
                 <div>
                   <div className="side-title">예시 문장</div>
                   <ul className="example-list">
-                    <li onClick={() => onChipClick("광주에서 사진 찍기 좋은 감성 카페 추천해줘")}>
-                      · 광주에서 사진 찍기 좋은 감성 카페 추천해줘
+                    <li onClick={() => onChipClick("광주에서 사진 찍기 좋은 카페 추천해줘")}>
+                      · 광주에서 사진 찍기 좋은 카페 추천해줘
                     </li>
                     <li onClick={() => onChipClick("담양에서 가족이랑 가기 좋은 디저트카페 있어?")}>
                       · 담양에서 가족이랑 가기 좋은 디저트카페 있어?

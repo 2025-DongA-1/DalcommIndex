@@ -69,6 +69,11 @@ function normalizeTag(t) {
 
   const compact = x.replace(/\s+/g, "");
 
+  //  공부/조용 관련 표기 통일 (핵심)
+  if (compact === "조용한" || compact === "조용함" || compact === "조용") return "조용";
+  if (compact === "스터디" || compact === "공부") return "공부";
+  if (compact === "노트북" || compact === "작업") return "작업";
+
   // 데이트 계열
   if (
     compact === "연인" ||
@@ -99,7 +104,13 @@ function normalizeTag(t) {
 }
 
 function buildMentionCountMap(cafe) {
-  const raw = cafe?.keyword_counts_json;
+  let raw = cafe?.keyword_counts_json;   // ✅ const -> let
+
+  // ✅ keyword_counts_json 이 문자열이면 JSON 파싱
+  if (typeof raw === "string") {
+    try { raw = JSON.parse(raw); } catch { raw = null; }
+  }
+
   const m = new Map();
 
   // 1) keyword_counts_json: [{text,value}] or {token:count}
@@ -475,7 +486,12 @@ export function recommendCafes(prefs, cafes, topK = 5) {
     const clipped = Math.min(20, mentionScore);
     score += clipped * 0.8;
 
-    return { totalScore: score, mention_score: clipped, keyword_hits: hits };
+    match.atmosphere = [...new Set(match.atmosphere)];
+    match.taste = [...new Set(match.taste)];
+    match.purpose = [...new Set(match.purpose)];
+    match.keyword_hits = hits;
+    return { totalScore: score, mention_score: clipped, keyword_hits: hits, match };
+
    }
 
     // 중복 제거(보기용)
@@ -490,7 +506,7 @@ export function recommendCafes(prefs, cafes, topK = 5) {
   return candidates
     .map((cafe) => {
       const d = scoreCafeDetailed(cafe);
-      return { ...cafe, score: d.totalScore, mention_score: d.mention_score, keyword_hits: d.keyword_hits };
+      return { ...cafe, score: d.totalScore, mention_score: d.mention_score, keyword_hits: d.keyword_hits, match: d.match };
     })
     .sort((a, b) => (b.score || 0) - (a.score || 0))
     .slice(0, topK);
