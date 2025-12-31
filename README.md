@@ -1,5 +1,5 @@
 # 달콤인덱스  
-*(팀명: 서울 자가에 살고싶은 동아 MX 다니는 영환팀 이야기)*
+*팀명: 서울 자가에 살고싶은 동아 MX 다니는 영환팀 이야기*
 <img width="910" height="434" alt="메인페이지" src="https://github.com/user-attachments/assets/3800b0e3-5932-41d4-9b04-957687421b3d" />
 <br>
 
@@ -92,7 +92,7 @@
 ---
 
 ## 서비스 흐름도
-📌 *(서비스 흐름도 이미지 삽입 위치)*
+<img width="1019" height="525" alt="서비스흐름도" src="https://github.com/user-attachments/assets/5c8d4404-ef91-481c-bba7-6a5d91a8e873" />
 <br>
 
 ---
