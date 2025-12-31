@@ -98,7 +98,7 @@
 ---
 
 ## ER 다이어그램
-📌 *(ER 다이어그램 이미지 삽입 위치)*
+<img width="7560" height="3367" alt="er다이어그램" src="https://github.com/user-attachments/assets/d6282f72-c4a1-4530-8414-9464b57a041c" />
 <br>
 
 ---
