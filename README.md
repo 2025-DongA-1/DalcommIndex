@@ -133,7 +133,7 @@
   <tr>
     <td align="center"><b>Frontend/DB</b></td>
     <td align="center"><b>Frontend</b></td>
-    <td align="center"><b>Backend데이터 수집 및 전처리</b></td>
+    <td align="center"><b>Backend</b></td>
     <td align="center"><b>Frontend</b></td>
   </tr>
   <tr>
