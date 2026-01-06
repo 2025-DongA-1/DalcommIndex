@@ -108,10 +108,20 @@
   <img width="910" height="434" alt="메인페이지" src="https://github.com/user-attachments/assets/667ba642-0ed1-4b0e-a1bb-73942e86540b" />
 
 - 검색 페이지 : 필터 기반 카페 리스트
+  <img width="1920" height="921" alt="image" src="https://github.com/user-attachments/assets/3efb6fdb-9995-4e0f-a5c1-86d3060d6a4d" />
+
 - 지도 페이지 : 카카오맵 기반 탐색
+  <img width="1917" height="919" alt="image" src="https://github.com/user-attachments/assets/6a419846-5033-4540-a057-b6f6a58ca31f" />
+
 - 카페 상세 페이지 : 상세 정보 및 즐겨찾기
+  <img width="1907" height="918" alt="image" src="https://github.com/user-attachments/assets/d38f268a-bdf8-45f6-a13e-ca27d23ef654" />
+
 - 챗봇 페이지 : 자연어 입력 추천
+  <img width="1189" height="871" alt="image" src="https://github.com/user-attachments/assets/4540c607-eeb0-4316-a865-47b2036e0f5c" />
+
 - 마이페이지 : 즐겨찾기 관리
+  <img width="1917" height="919" alt="image" src="https://github.com/user-attachments/assets/cd02faf5-5414-497e-8922-7e5715d683cf" />
+
 <br>
 
 ---
